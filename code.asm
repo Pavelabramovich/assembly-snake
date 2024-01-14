@@ -1,6 +1,7 @@
-.model tiny
- 
-.data
+
+data segment 'data'
+assume ds:data    
+  
     size         db  16 
     matrix       db  16 dup ('.'),"2222...A",232 dup ('.')                            ; inicializacia matrix with start uslovia
     field_line   db  16 dup ('Ý',162)                                                 ; lime fon and green simbol left half    
@@ -32,11 +33,9 @@
  
     zaderjka     dw  4              
    
-    paus1        db  "Û Û"    
-                 db  "Û Û"
-                 db  "Û Û"
+    paus1        db  3 dup ("Û Û")    
     
-    paus_clr     db   9 dup (' ')
+    paus_clr     db  3 dup ("   ")
     
     snk1         db  " ___          ____      __  ___ "
                  db  "| __| |\  /| | __ | |\ / / | __|"
@@ -108,25 +107,15 @@
     choice       db  1 
     chc          db  '>'    
     
-    f_name       db 'records.txt',0 
+    f_name       db '../records.txt',0 
     rec_buf      db 12 dup (?)  
      
-    
-.code
+data ends    
 
 
-;------------
+code segment 'code'
+assume cs:code    
 
-    mov_to_page macro num
-   
-    mov ah,5
-    mov al,num                  
-    
-    int 10h 
-    
-    endm  
-
-;----------
 
 start:    
     
@@ -199,8 +188,18 @@ main_loop:
 end_game:
 
    call show_end_gm_ekrane
+                   
+                   
+;------------
+
+    mov_to_page macro num
    
+    mov ah,5
+    mov al,num                  
     
+    int 10h 
+    
+    endm  
                                            
 ;------------
     
@@ -1386,7 +1385,8 @@ skip2:
     ret  
     create_field endp 
 
-;------------
+;------------  
+
+code ends 
  
- 
-end start
+end start       
