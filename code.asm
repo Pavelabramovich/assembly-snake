@@ -1,16 +1,52 @@
 
 data segment 'data'
 assume ds:data    
-  
-    size         db  16 
-    matrix       db  16 dup ('.'),"2222...A",232 dup ('.')                            ; inicializacia matrix with start uslovia
-    field_line   db  16 dup ('Ý',162)                                                 ; lime fon and green simbol left half    
-    fsnake_str   db  3 dup ('X',230),';',230,3 dup ('Ý',162),'O',196,9 dup ('Ý',162)  ; field line with snake and apple
-                                                                 
-    counter      db  0
-    str_num      db  1 
+                         
+    size            =  16                                                            
+    field           db  256 dup (?)
+    
+    black           = 00h
+    blue            = 01h
+    green           = 02h
+    cuan            = 03h
+    red             = 04h
+    purple          = 05h
+    brown           = 06h
+    light_gray      = 07h
+    dark_gray       = 08h
+    light_blue      = 09h
+    lime            = 0Ah
+    light_cuan      = 0Bh
+    light_red       = 0Ch
+    crimson         = 0Dh
+    yellow          = 0Eh
+    white           = 0Fh
+    
+; Each word in graphics memory is interpreted as follows: 
+; the first byte is the character, the next 4 bits are the character color 
+; and the last 4 are the background color.
+                                          
 
-    score_mes    db  0Ah,0Dh,"               Score: "
+    menu_page        db  00000000b      ; first bit will be used to store initialization state  
+    score_list_page  db  00000001b
+    regime_page      db  00000010b              
+    game_page        db  00000011b
+    game_over_page   db  00000100b          
+    game_win_page    db  00000101b 
+    game_end_page    db  00000110b                
+                                                                 
+    counter         db  0
+    str_num      db  1      
+    
+    
+    empty        =  0
+    top          =  1
+    right        =  2
+    bottom       =  3
+    left         =  4 
+    
+
+    score_mes    db  "Score: "
     score_str    db  "000"
     score        dw  0
     
@@ -20,7 +56,7 @@ assume ds:data
     rotation     db  '2'          ; =>
 
     
-    grass_elem   db  'Ý',162      ; grass         code 0
+    grass_elem   db  'Ý',0A2h     ; grass         code 0
     snake_elem   db  'X',230      ; snake body    code 1
     
     head_elem_u  db  '"',230      ; head up       code 2  
@@ -31,81 +67,117 @@ assume ds:data
     
     apple_elem   db  'O',196      ; apple         code 7
  
-    zaderjka     dw  4              
+    delay        dw  3              
    
     paus1        db  3 dup ("Û Û")    
     
     paus_clr     db  3 dup ("   ")
     
-    snk1         db  " ___          ____      __  ___ "
-                 db  "| __| |\  /| | __ | |\ / / | __|"
-                 db  "||__  | \ || ||__|| ||/ /  ||_  "
-                 db  "|__ | ||\\|| | __ | |  (   | _| "
-                 db  " __|| || \ | ||  || ||\ \  ||__ "
-                 db  "|___| |/  \| |/  \| |/ \_\ |___|"
+    snake_big_word   db  32,6,
+                     db  " ___          ____      __  ___ "
+                     db  "| __| |\  /| | __ | |\ / / | __|"
+                     db  "||__  | \ || ||__|| ||/ /  ||_  "
+                     db  "|__ | ||\\|| | __ | |  (   | _| "
+                     db  " __|| || \ | ||  || ||\ \  ||__ "
+                     db  "|___| |/  \| |/  \| |/ \_\ |___|"
                        
-    gm1          db  " ____   ____   _ ",' '," _   ___ "
-                 db  "| ___| | __ | | \",' ',"/ | | __|"   
-                 db  "|| __  ||__|| |  ",'Y',"  | ||_  "    
-                 db  "|||_ | | __ | ||\",' ',"/|| | _| "
-                 db  "||__|| ||  || || ", 31," || ||__ "              
-                 db  "|____| |/  \| |/ ",' '," \| |___|"   
+    game_big_word    db  27,6
+                     db  " ____   ____   _ ",' '," _   ___ "
+                     db  "| ___| | __ | | \",' ',"/ | | __|"   
+                     db  "|| __  ||__|| |  ",'Y',"  | ||_  "    
+                     db  "|||_ | | __ | ||\",' ',"/|| | _| "
+                     db  "||__|| ||  || || ", 31," || ||__ "              
+                     db  "|____| |/  \| |/ ",' '," \| |___|"   
     
-    ovr1         db  " ____           ___   ____ "
-                 db  "| __ | |\   /| | __| | __ |"
-                 db  "||  || ||   || ||_   ||__||"  
-                 db  "||  || \\   // | _|  | _ _|"    
-                 db  "||__||  \\_//  ||__  || \\ "
-                 db  "|____|   \_/   |___| |/  \\"  
+    over_big_word    db  27,6
+                     db  " ____           ___   ____ "
+                     db  "| __ | |\   /| | __| | __ |"
+                     db  "||  || ||   || ||_   ||__||"  
+                     db  "||  || \\   // | _|  | _ _|"    
+                     db  "||__||  \\_//  ||__  || \\ "
+                     db  "|____|   \_/   |___| |/  \\"  
     
-    rgm1         db  " ____   ___   ____   _   _ ",' '," _   ___ "
-                 db  "| __ | | __| | ___| | | | \",' ',"/ | | __|" 
-                 db  "||__|| ||_   || __  | | |  ",'Y',"  | ||_  "  
-                 db  "| _ _| | _|  |||_ | | | ||\",' ',"/|| | _| "    
-                 db  "|| \\  ||__  ||__|| | | || ", 31," || ||__ "
-                 db  "|/  \\ |___| |____| |_| |/ ",' '," \| |___|"  
+    regime_big_word  db  37,6
+                     db  " ____   ___   ____   _   _ ",' '," _   ___ "
+                     db  "| __ | | __| | ___| | | | \",' ',"/ | | __|" 
+                     db  "||__|| ||_   || __  | | |  ",'Y',"  | ||_  "  
+                     db  "| _ _| | _|  |||_ | | | ||\",' ',"/|| | _| "    
+                     db  "|| \\  ||__  ||__|| | | || ", 31," || ||__ "
+                     db  "|/  \\ |___| |____| |_| |/ ",' '," \| |___|"  
     
-    you1         db  "         ____         "
-                 db  "|\   /| | __ | |\   /|"
-                 db  "\ \ / / ||  || ||   ||"  
-                 db  " \   /  ||  || ||   ||"    
-                 db  "  | |   ||__|| \\___//"
-                 db  "  |_|   |____|  \___/ "
+    you_big_word     db  22,6
+                     db  "         ____         "
+                     db  "|\   /| | __ | |\   /|"
+                     db  "\ \ / / ||  || ||   ||"  
+                     db  " \   /  ||  || ||   ||"    
+                     db  "  | |   ||__|| \\___//"
+                     db  "  |_|   |____|  \___/ "
     
-    won1         db  "              ____        "
-                 db  "|\        /| | __ | |\  /|"
-                 db  "||        || ||  || | \ ||"  
-                 db  "\\   /\   // ||  || ||\\||"    
-                 db  " \\_//\\_//  ||__|| || \ |"
-                 db  "  \_/  \_/   |____| |/  \|"   
+    won_big_word     db  26,6
+                     db  "              ____        "
+                     db  "|\        /| | __ | |\  /|"
+                     db  "||        || ||  || | \ ||"  
+                     db  "\\   /\   // ||  || ||\\||"    
+                     db  " \\_//\\_//  ||__|| || \ |"
+                     db  "  \_/  \_/   |____| |/  \|"   
     
-    scr1         db  " ___   ____   ____   ____   ___ "
-                 db  "| __| | ___| | __ | | __ | | __|"
-                 db  "||__  ||     ||  || ||__|| ||_  "
-                 db  "|__ | ||     ||  || | _ _| | _| "
-                 db  " __|| ||___  ||__|| || \\  ||__ "
-                 db  "|___| |____| |____| |/  \\ |___|"
+    score_big_word   db  32,6  
+                     db  " ___   ____   ____   ____   ___ "
+                     db  "| __| | ___| | __ | | __ | | __|"
+                     db  "||__  ||     ||  || ||__|| ||_  "
+                     db  "|__ | ||     ||  || | _ _| | _| "
+                     db  " __|| ||___  ||__|| || \\  ||__ "
+                     db  "|___| |____| |____| |/  \\ |___|"
     
-    lst1         db  " _      _   ___   _____ "
-                 db  "| |    | | | __| |_   _|" 
-                 db  "| |    | | ||__    | |  "  
-                 db  "| |    | | |__ |   | |  "    
-                 db  "| |__  | |  __||   | |  "
-                 db  "|____| |_| |___|   |_|  "  
+    list_big_word    db  24,6 
+                     db  " _      _   ___   _____ "
+                     db  "| |    | | | __| |_   _|" 
+                     db  "| |    | | ||__    | |  "  
+                     db  "| |    | | |__ |   | |  "    
+                     db  "| |__  | |  __||   | |  "
+                     db  "|____| |_| |___|   |_|  "  
                                                                                             
+
     
-    play_agn_str db  "Play again"
-    scr_lst_str  db  "Score list"
-    exit_str     db  "Exit"
+    play_str         db  "Play",'$'
+    play_again_str   db  "Play again",'$'
+    score_list_str   db  "Score list",'$'
+    exit_str         db  "Exit",'$' 
     
-    easy         db  "Easy        XXX    XX.XX.20XX"        
-    medium       db  "Medium      XXX    XX.XX.20XX"        ; Regime  score   date
-    hard         db  "Hard        XXX    XX.XX.20XX"
     
-    cng_rgm      db  "Change regime"    
+    play_chc         =   1
+    score_list_chc   =   2 
+    
+    back_chc         =   1
+    
+    escape_chc       =   255
+    
+    
+    
+    
+    up_arrow_key     =   048h
+    right_arrow_key  =   04Dh
+    down_arrow_key   =   050h
+    left_arrow_key   =   04Bh
+    
+    
+    enter_key        =   01C0Dh  
+    escape_key       =   0011Bh
+    
+    
+    easy_str     db  "Easy",'$'        
+    medium_str   db  "Medium",'$'        ; Regime  score   date
+    hard_str     db  "Hard",'$'
+    
+    record_str   db  "Easy        XXX    XX.XX.20XX"
+    
+    
+    cng_rgm      db  "Back to menu"    
+                  
      
     choice       db  1 
-    chc          db  '>'    
+    choice_ptr   db  '>'
+    choice_clear db  ' '    
     
     f_name       db '../records.txt',0 
     rec_buf      db 12 dup (?)  
@@ -118,56 +190,67 @@ assume cs:code
 
 
 start:    
+     
+    call set_start_settings 
     
-    mov ax,0000h                 ; ochistka ekrana set small ecrane  
-    int 10h                       
-          
-    mov ax,1003h                 ; vibor jarkih color
-    mov bl,0
+menu:  
+                  
+    call load_menu_page 
     
-    int 10h                 
-
-    mov ax, @data                ; v ds pomeschaem adres segmenta dannih
-    mov ds, ax 
-       
-    mov ax, @data                ; v es pomeschaem adres segmenta dannih
-    mov es, ax
-    
-restart:    
-          
-    call show_start_ekrane 
+    cmp  choice,play_chc
+    je   regime
         
+    cmp  choice,score_list_chc
+    je   score_list
+    
+    jmp  game_end
+
+score_list:
+    
+    call load_score_list_page
+
+
+  
+regime:
+
+    call load_regime_page
+    
+    cmp choice,3
+    jg  game_end
+        
+    mov  al,choice
+    call set_delay
+    
+game:    
+    
+    
+             
     jmp strt_gm
+
+
+
+
 
 gm_ovr:
     
     call update_record
     call show_gm_ovr_ekrane
            
-    call new_game
+    call set_start_game_state
       
 strt_gm:
+             
               
-    call create_field
+    call print_game_page
     
-    mov bh,0                       ; nomer of page 
-    call action_choice
-   
-    cmp al,1
-    je regm
-    
-    cmp al,2 
-    je scr_lst
-    
-    jmp end_game
+
     
 regm:  
-    call regime_choice
     jmp main_loop
     
 scr_lst:
 
-    call show_score_list
+    call print_score_list_page
       
 main_loop:   
     
@@ -178,32 +261,529 @@ main_loop:
      
     call set_head
     
-    mov cx,zaderjka
+    mov cx,delay
     call stoping    
   
     
     jmp main_loop 
      
            
-end_game:
+game_end:
 
    call show_end_gm_ekrane
-                   
-                   
-;------------
 
-    mov_to_page macro num
+ 
+ 
+;===================================
+;
+; Procedure for initial game setup. 
+; Called once at the very beginning of the program. 
+
+set_start_settings proc  
+    
+                   mov  ax,0000h                 ; Set a small screen and clean it  
+                   int  10h                       
+          
+                   mov  ax,1003h                 ; Set bright colors
+                   mov  bl,0
+    
+                   int  10h                 
+
+                   mov  ax, @data                
+                   mov  ds, ax 
+       
+                   mov  ax, @data              
+                   mov  es, ax
+                   
+                   ret                   
+set_start_settings endp
+
+
+;===================================
+;
+; Since pages use the first bit to indicate initialization, 
+; to get the page number needed to set the first bit to 0.
+; The only argument is the page. 
+; The result is placed in BH. 
+
+get_page_num macro page
+    
+             mov bh,page 
+             and bh,01111111b               
+endm
+  
+                   
+;===================================
+;
+; Macro to go to another page.
+; The only argument is the page. 
+
+mov_to_page macro page
    
-    mov ah,5
-    mov al,num                  
+            mov ah,5  
     
-    int 10h 
+            get_page_num page 
+            mov al,bh                
     
-    endm  
+            int 10h 
+    
+endm  
+ 
                                            
-;------------
+;===================================
+;
+; Macro for marking pages as initialized.
+; The only argument is the page. 
     
-    read_records proc
+set_inited       macro page 
+                 local already_inited     
+    
+                 cmp page,10000000b
+                 jae already_inited
+                
+                 get_page_num page
+                 mov bl, bh
+                 mov bh,0
+          
+                 mov dl,menu_page[bx]      ; Since pages are allocated in memory one after another and 
+                 or  dl,10000000b          ; similarly marked with numbers,can be used the address of the
+                                           ; first page and the page itself as an offset to obtain the address
+                 mov menu_page[bx],dl
+                  
+already_inited:  
+endm
+
+
+;===================================
+;
+; Macro to check if the page is initialized.
+; The only argument is the page.
+; The result is stored in the CF bit
+
+is_inited macro page
+    
+          mov ah,page                       ; An overflow will occur here if the page is greater than 01111111b, which
+          add ah,10000000b                  ; is a sign of an initialized page. This will set or reset the CF flag.    
+endm        
+
+
+;===================================
+;
+; Procedure for displaying big words. 
+; ES:BP - big word adress.The first two bytes must be length and width, then comes the actual string.
+; BH - page num 
+; BL - attribute
+; DH,DL - row and column
+    
+print_big_word proc 
+    
+               mov  al,0                     ; one attribute for all symbols
+    
+               mov  cl,[bp]                  ; get lenght of big word
+                                            ; get height og big word
+               mov  ch,[bp+1] 
+               mov  counter, ch              ; save to counter and set to zero to
+               mov  ch,0                     ; CX = CL
+    
+               add  bp,2                     ; set bp to start of big word
+       
+               mov  ah,13h
+    
+str_loop:      int  10h                      ; print one line of big word
+    
+               dec  counter                  
+               
+               inc  dh                       ; move to next line
+               add  bp,cx
+    
+               cmp  counter,0
+               jne  str_loop
+                                
+               ret      
+print_big_word endp    
+
+
+;===================================
+;
+; Procedure for displaying choices. There are always three 
+; options and they are located in the same places.
+; ES:AX - first choice
+; ES:CX - second choice
+; ES:DX - third choice
+; BH - page number
+; 
+; Choices must be strings ended with $
+
+print_choices        proc          
+    
+                     push dx
+                     push cx
+                     push ax 
+    
+                     mov  counter,0 
+    
+                     mov  ch,17                ; Store row.
+        
+print_choices_loop:  mov  dh,ch
+                     mov  dl,26
+    
+                     mov  ah,02h               ; Move cursor.
+                     int  10h
+    
+                     pop  dx                   ; Pop from stack choice string address
+                     mov  ah,09h               ; Print choice string
+                     int  21h
+    
+                     add  ch,2                 ; Go down two rows
+    
+                     inc  counter
+                     cmp  counter,3
+                     jl   print_choices_loop
+             
+                     ret
+print_choices        endp 
+
+
+;===================================
+;
+; Procedure for choosing from three options. Responsible for 
+; switching between options. The choice variable is responsible 
+; for the number of the selected action. Stores the result 
+; of the selection in the choice variable. 
+; BH - page num 
+
+    
+make_choice      proc
+            
+                 mov  al,choice
+        
+                 dec  al                  ; get offset in the lines relative to the first option. 
+                 shl  al,1                ; There is one empty line between the lines with options.
+        
+                 mov  dh,17               ; Row with first choice
+                 add  dh,al
+                 mov  dl,24
+        
+                 mov  bl,light_gray
+                 mov  cx,1
+        
+       
+                 lea  bp,choice_ptr
+                 mov  ah,13h
+                 mov  al,0
+                                                ; print choice ptr in neaded position
+                 int  10h
+            
+            
+                 mov  ah,1                        ; priachem kursor
+                 mov  ch,20h
+            
+                 int  10h
+
+choice_waiting:  mov  ah,0                        ; prerivanie vvoda simvola s ojidaniem
+                 int  16h                         ; result saved in ax
+         
+                 cmp  al,'w'
+                 je   to_upper_choice
+    
+                 cmp  ah,up_arrow_key
+                 je   to_upper_choice
+    
+    
+                 cmp  al,'s'
+                 je   to_lower_choice
+    
+                 cmp  ah,down_arrow_key
+                 je   to_lower_choice
+    
+    
+                 jmp  other_choice
+    
+to_upper_choice: add  choice,4                      ; upper_choice = (choice + 4) % 3 + 1
+
+to_lower_choice: mov  ah,0
+                 mov  al,choice                     ; lower_choice = choice % 3 + 1 
+    
+                 mov  ch,3
+                 div  ch
+   
+                 inc  ah
+                 mov  choice,ah  
+    
+    
+                 mov  cx,1                        ; clear choice ptr on previos choice on screen
+                 lea  bp,choice_clear                 
+                 mov  al,0
+                 
+                 mov  ah,13h
+                 int  10h
+              
+                 jmp  make_choice               ; redisplay choice pointer
+
+other_choice:    cmp  ax,enter_key                 ; enter
+                 je   choice_is_made
+    
+                 cmp  ax,escape_key                      ; esc 
+                 jne  choice_waiting
+    
+                 mov  choice,escape_chc
+
+choice_is_made:  ret    
+make_choice      endp  
+
+
+;===================================
+;
+; Pocedure for displaying a menu page. Writes 
+; to video memory once, then overwriting will not occur.
+
+print_menu_page       proc
+    
+                      is_inited menu_page
+                      jc   menu_page_is_inited
+        
+                      get_page_num menu_page
+    
+                      mov  ax,@data
+                      mov  es,ax 
+    
+       
+                      lea  bp,snake_big_word   
+       
+                      mov  dh,2                  ; Row
+                      mov  dl,3                  ; Column                                
+                      mov  bl,crimson                                                
+                       
+                      call print_big_word 
+                
+                
+                      lea  bp,game_big_word
+                
+                      mov  dl,6    
+                      mov  bl,purple    
+            
+                      call print_big_word
+                
+                
+                      lea  ax,play_str
+                      lea  cx,score_list_str
+                      lea  dx,exit_str
+                
+                      call print_choices
+                
+                      set_inited menu_page
+     
+menu_page_is_inited:  ret     
+print_menu_page       endp  
+
+ 
+;===================================
+;
+; Procedure that controls the logic of a menu page. 
+; Saves the selection results to the choice variable.
+
+load_menu_page proc
+    
+               mov_to_page menu_page  
+     
+               call print_menu_page
+    
+    
+               get_page_num menu_page 
+               mov choice,1
+                     
+               call make_choice
+                              
+               ret                      
+load_menu_page endp
+
+
+;===================================
+;
+; Procedure for setting delay based on difficulty level.
+; AL-difficulty level (1-easy,2-medium,3-hard) 
+ 
+set_delay proc
+          
+          mov cx,5
+          sub cl,al
+    
+          mov delay,cx
+  
+          ret
+set_delay endp     
+ 
+ 
+;===================================
+;
+; Pocedure for displaying a regime page. Writes 
+; to video memory once, then overwriting will not occur.
+
+print_regime_page       proc
+    
+                        is_inited regime_page
+                        jc   regime_page_is_inited   
+
+                        get_page_num regime_page
+    
+                        mov  ax,@data
+                        mov  es,ax 
+    
+                        lea  bp,regime_big_word   
+       
+                        mov  dh,4                  ; Row
+                        mov  dl,2                  ; Column                                
+                        mov  bl,light_red                                                
+                       
+                        call print_big_word 
+                      
+                        lea  ax,easy_str
+                        lea  cx,medium_str
+                        lea  dx,hard_str
+                
+                        call print_choices
+   
+    
+                        set_inited regime_page
+     
+regime_page_is_inited:  ret 
+print_regime_page       endp  
+ 
+ 
+;===================================
+;
+; Procedure that controls the logic of a regime page. 
+; Saves the selection results to the choice variable
+
+load_regime_page proc
+                 
+                 mov_to_page regime_page
+                 
+                 call print_regime_page  
+                 
+                 get_page_num regime_page 
+                 mov choice,1
+                     
+                 call make_choice
+                 
+                 ret
+load_regime_page endp
+
+
+
+
+
+;----------
+
+    
+print_score_list_page proc
+    
+    
+    
+    call read_records
+       
+    mov counter,6
+    
+    get_page_num score_list_page   ; nomer stranici 
+                       
+    mov cx,32                   ; dlina stroki SNAKE
+    mov dl,3
+    mov dh,2                          
+    mov bl,15                                                
+    mov al,1                    ; bez atributov   
+    lea bp,score_big_word
+    
+    call print_big_word 
+        
+    mov bl,7   
+    mov counter,6
+    mov cx,24 
+    lea bp,list_big_word
+    mov dl,8
+    
+    call print_big_word
+    
+       
+    mov bl,10                     ;lime color
+    mov cx,29
+    mov dh,17
+    mov dl,6
+    lea bp,easy_str
+    mov ah,13h
+    
+    int 10h
+    
+    mov bl,14                    ; yellow
+    mov dh,19
+    lea bp,medium_str
+    
+    int 10h
+    
+    mov bl,12                   ; red
+    mov dh,21
+    lea bp,hard_str
+    
+    int 10h
+    
+    
+    
+    
+entering_command:    
+    
+    mov ah,0                        ; prerivanie vvoda simvola s ojidaniem
+    int 16h
+    
+    cmp al,27
+    je game_end
+    
+    mov choice,1
+    
+    cmp ax,01C0Dh
+    je menu        
+      
+    jmp entering_command       
+        
+                      ret    
+print_score_list_page endp    
+      
+;------------  
+
+
+
+
+
+
+
+
+
+;===================================
+;
+; Procedure that controls the logic of a score list page. 
+; Save back_chc in choice variable if user choice back to menu
+; and save escape_chc if user press escape
+
+
+load_score_list_page proc
+                      
+                     mov_to_page score_list_page 
+                      
+                     call print_score_list_page 
+                      
+                      
+                     ret
+load_score_list_page endp
+
+
+
+
+
+
+
+
+         
+;-----------
+    
+read_records proc
     
     lea dx,f_name ;    
     
@@ -274,7 +854,7 @@ exit2:
            
     ret    
     read_records endp    
-
+ 
 ;------------
     
     read_1_record proc
@@ -321,80 +901,7 @@ exit2:
     ret    
     read_date endp    
 
-;----------
-
-    
-    show_score_list proc
-    
-    mov_to_page 7
-    
-    call read_records
-    
-    
-    mov counter,6
-    
-    mov bh,7                     ; nomer stranici 
-    mov cx,32                   ; dlina stroki SNAKE
-    mov dl,3
-    mov dh,2                          
-    mov bl,15                                                
-    mov al,1                    ; bez atributov   
-    lea bp,scr1
-    
-    call print_str 
-        
-    mov bl,7   
-    mov counter,6
-    mov cx,24 
-    lea bp,lst1
-    mov dl,8
-    
-    call print_str
-    
-       
-    mov bl,10                     ;lime color
-    mov cx,29
-    mov dh,17
-    mov dl,6
-    lea bp,easy
-    mov ah,13h
-    
-    int 10h
-    
-    mov bl,14                    ; yellow
-    mov dh,19
-    lea bp,medium
-    
-    int 10h
-    
-    mov bl,12                   ; red
-    mov dh,21
-    lea bp,hard
-    
-    int 10h
-    
-    
-    
-    
-entering_command:    
-    
-    mov ah,0                        ; prerivanie vvoda simvola s ojidaniem
-    int 16h
-    
-    cmp al,27
-    je end_game
-    
-    mov choice,1
-    
-    cmp ax,01C0Dh
-    je restart        
-      
-    jmp entering_command       
-        
-    ret    
-    show_score_list endp    
-      
-;------------    
+;-------------------  
     
     
     update_record proc
@@ -422,7 +929,7 @@ entering_command:
     
             
             
-    mov ax,zaderjka
+    mov ax,delay
     sub ax,2
     
     shl ax,2
@@ -478,203 +985,35 @@ exit:
     ret
     update_record endp     
 
-;------------ 
 
-   regime_choice proc
-   
-   mov_to_page 5
-   
-   mov counter,6
-    
-    mov bh,5                     ; nomer stranici 
-    mov cx,37                   ; dlina stroki SNAKE
-    mov dl,2
-    mov dh,4                          
-    mov bl,12                                                
-    mov al,1                    ; bez atributov   
-    lea bp,rgm1
-    
-    call print_str
-    
-    mov bl,7
-    mov cx,4
-    mov dh,17
-    mov dl,26
-    lea bp,easy
-    mov ah,13h
-    
-    int 10h
-    
-    mov dh,19
-    mov cx,6
-    lea bp,medium
-    
-    int 10h
-    
-    mov dh,21
-    mov cx,4
-    lea bp,hard
-    
-    int 10h
-     
-    mov bh,5
-    mov choice,1
-    call action_choice
-    
-    mov ax,5
-    sub al,choice
-    
-    mov zaderjka,ax
-     
-   mov_to_page 1
-    
-   ret
-   regime_choice endp 
+
 
 ;-----------
 
     show_end_gm_ekrane proc
    
-    mov_to_page 6 
+    mov_to_page game_end_page 
                      
     mov ax,4C00h              ; zakanchivaem programmu           
     int 21h  
       
     show_end_gm_ekrane endp  
+ 
   
-;------------
-    
-    action_choice proc
-    
-entering_simbol2:
-    
-    mov al,choice
-    dec al
-    shl al,1
-    
-    mov dh,17
-    add dh,al
-    
-    
-    mov bl,7
-    mov cx,1
-    
-    mov dl,24
-    lea bp,chc
-    mov ah,13h
-    mov al,1
-    
-    int 10h
-    
-    
-    mov ah,1                        ; priachem kursor
-    mov ch,20h
-    
-    int 10h
-    
-   
-    
-    
-    mov ah,0                        ; prerivanie vvoda simvola s ojidaniem
-    int 16h 
-    
-    push ax
-    
-    mov cx,1
-    lea bp,paus_clr
-    mov ah,13h
-    mov al,1
-    int 10h
-    
-    pop ax
-    
-    cmp ah,1                        ; esli esc, to exit
-    je end_game
-    
-    
-    cmp al,'w'
-    je w2
-    
-    cmp ah,048h
-    jne not_w2    
-w2:        
-    dec choice
-        
-    cmp choice,0
-    je to_3
-    
-    jmp entering_simbol2
-    
-not_w2:
-    
-    cmp al,'s'
-    je s2
-    
-    cmp ah,050h
-    jne not_s2    
-s2:
-    inc choice
-        
-    cmp choice,4
-    je to_1
-    
-                           ; esli ne probel, to vvodim dalshe
-not_s2:
-    
-    cmp ax,01C0Dh
-    jne not_enter
-    
-    mov al,choice
-    ret
-    
-not_enter:
-    
-    cmp al,27
-    je end_game
-    
-    jmp entering_simbol2
-             
-to_1:
+  
 
-    mov choice,1
-    jmp entering_simbol2        
 
-to_3:
 
-    mov choice,3
-    jmp entering_simbol2
-
-        
-    ret
-    action_choice endp    
-
-;------------
-    
-    print_str proc
-    
-    mov ah,13h
-    
-str_loop:    
-                
-    int 10h
-    
-    dec counter
-    inc dh
-    add bp,cx
-    
-    cmp counter,0
-    jne str_loop
-           
-    ret
-    print_str endp    
 
 ;-----------
    
     print_pause proc
     
     mov al,1                    ; bez atributov
-         
-    mov bh,1                     ; nomer stranici
+    
+    
+    get_page_num game_page     
+;    mov bh,1                     ; nomer stranici
     mov bl,7                   ; seriõ cvet dlia SCORE 
     
     mov cx,3                   ; dlina stroki SNAKE
@@ -683,7 +1022,7 @@ str_loop:
     mov dh,2                  ; mesto vivoda
     mov dl,2                                
                                                                    
-    call print_str
+    call print_big_word
        
     ret
     print_pause endp    
@@ -704,7 +1043,7 @@ entering_pause:
     int 16h 
     
     cmp ah,1                        ; esli esc, to exit
-    je end_game
+    je game_end
     
     cmp ah,57                       ; esli ne probel, to vvodim dalshe
     jne entering_pause     
@@ -720,7 +1059,7 @@ entering_pause:
 
     stoping proc
      
-    mov dx,0          ; zaderjka
+    mov dx,0          ; delay
     mov ah,86h  
     
     int 15h        
@@ -734,7 +1073,7 @@ entering_pause:
     update_score proc
         
     mov bx,apple
-    cmp matrix[bx],'A'
+    cmp field[bx],'A'
     jne inc_score                  
                          
     mov bx,tail 
@@ -743,8 +1082,11 @@ entering_pause:
     mov ax,tail   
     mov tail,bx
     
-    mov bx,ax
-    mov matrix[bx],'.'
+    mov bx,ax   
+         
+    mov dh,empty 
+    mov field[bx],dh     
+    
     mov cx,0
     call set_elem
     
@@ -765,17 +1107,22 @@ not_won:
     call get_score
     
     
-    mov bl,7
-    mov bh,1
+    mov bl,7   
     
-    mov cx,27                   ; dlina stroki
+    get_page_num game_page
+   ; mov bh,1
     
-    mov dh,20
-    mov dl,0
+    mov cx,3                   ; dlina stroki
+    
+    mov dh,21
+    mov dl,22
      
     mov ax, @data                ; v es pomeschaem adres segmenta dannih
-    mov es, ax
-    lea bp,score_mes            ; dlia prerivania  
+    mov es, ax   
+    
+    
+    
+    lea bp,score_str            ; dlia prerivania  
     mov al,1 
      
      
@@ -790,43 +1137,60 @@ apl:
     update_score endp    
 
 
-;------------
-
-    new_game proc
+;===================================
+;
+; Set settings to the start state: 
+;
+; Field becomes like this:
+;      
+;     012345678....15
+;     ______________
+; 0  |...........*..| 
+; 1  |SSSS...A...*..| 
+; 2  |...........*..|    
+; .  |************..|        
+; 14 |..............| 
+; 15 |______________|  
+;
+; Field size is 16x16  
+; Score is set to 0
+         
+set_start_game_state proc
      
-    mov bx,0 
-     
-    clr_loop:                      ; ochistka_massiva
-    
-    mov matrix[bx],'.'
-
-    inc bx
-    cmp bx,256       
-    
-    jne clr_loop
-       
-    mov matrix[16],'2'
-    mov matrix[17],'2'
-    mov matrix[18],'2'
-    mov matrix[19],'2'   
-    
-    mov matrix[23],'A'
-    
-    mov score,0
-    
-    mov tail,16
-    mov head,19
-    
-    mov apple,23
-    
-    mov rotation,'2'
-    
-    mov score_str[0],'0'
-    mov score_str[1],'0'
-    mov score_str[2],'0'
-    
-    ret
-    new_game endp    
+                     mov  bx,0                   
+                     mov  dh,empty 
+                                                ;
+clr_loop:            mov  field[bx],dh          ;    for i from 0 to size    
+                                                ;        for j from 0 to size
+                     inc  bx                    ;            field[i][j] = empty
+                     cmp  bx,256                ;
+                     jne  clr_loop              ;
+                                                ;
+                                                ;
+                     mov  field[16],'2'         ;    field[1][0..4] = snake
+                     mov  field[17],'2'         ;    
+                     mov  field[18],'2'         ;
+                     mov  field[19],'2'         ;
+                                                ;
+                     mov  tail,16               ;    tail = [1][0]
+                     mov  head,19               ;    head = [1][3]
+                                                ;
+                     mov  rotation,'2'          ;    rotation = right   
+                                                ; 
+                                                ;
+                     mov  field[23],'A'         ;    field[1][7] = apple
+                                                ;
+                     mov  apple,23              ;    apple = [1][7]
+                
+            
+                     mov  score,0
+                
+                     mov  score_str[0],'0'
+                     mov  score_str[1],'0'
+                     mov  score_str[2],'0'
+                    
+                     ret
+set_start_game_state endp    
 
 ;-----------   
     
@@ -840,10 +1204,11 @@ apl:
     call move
     mov head,bx
     
-    cmp matrix[bx],'.'
+    mov  dh,empty
+    cmp field[bx],dh
     je skip
     
-    cmp matrix[bx],'A'
+    cmp field[bx],'A'
     je skip
     
     mov choice,0      ; vivodit GAME OVER
@@ -855,7 +1220,7 @@ skip:
     int 21h         ; v dh - sekundi, v dl - santisekundi 
     
     mov al,rotation 
-    mov matrix[bx],al
+    mov field[bx],al
     
     and dx,000001110111111b
     cmp dx,50
@@ -906,16 +1271,15 @@ set_h:
     lea bp,grass_elem[bx]
     
     pop bx 
-       
-    mov bh,1                     ; nomer stranici
+    
+
+    get_page_num game_page        ; nomer stranici
    
     mov ch,0  
    
    mov cl,1  
    
     mov dl,ah                     ; nomer clmn
-    
- 
     mov dh,al              ; nomer stroki
     
     mov al,255                   ; regime - stroka s atributami
@@ -935,7 +1299,7 @@ set_h:
     
     mov bx,apple
     
-    cmp matrix[bx],'A'
+    cmp field[bx],'A'
     jne try_set_apple
     
     ret
@@ -954,11 +1318,12 @@ try_set_apple:
     mov dh,0        
     
     mov bx,dx       ; tepier v bx index apla
-
-    cmp matrix[bx],'.'  ; esli popali v snake, to randomim zanogo
+    
+    mov  ah,empty
+    cmp field[bx],ah  ; esli popali v snake, to randomim zanogo
     jne try_set_apple    
        
-    mov matrix[bx],'A'
+    mov field[bx],'A'
     mov apple,bx    
     
     mov cx,7          ; 7 - cod elementa apla
@@ -972,17 +1337,17 @@ try_set_apple:
 
     move proc   ; v bx lejit index togo, chto nada dvigat
     
-    cmp matrix[bx],'1'
+    cmp field[bx],'1'
     jne not_1    
     call to_up
     ret    
 not_1:        
-    cmp matrix[bx],'2'
+    cmp field[bx],'2'
     jne not_2    
     call to_right
     ret
 not_2:    
-    cmp matrix[bx],'3'
+    cmp field[bx],'3'
     jne not_3    
     call to_down
     ret
@@ -1121,7 +1486,7 @@ not_a:
 not_pause:
 
     cmp al,27
-    je end_game
+    je game_end
     
 repit:    
     
@@ -1165,53 +1530,55 @@ scan_num:
     
     show_gm_ovr_ekrane proc
     
-    mov_to_page 2
+    mov_to_page game_over_page
     
     cmp choice,1
     je Won
     
     mov counter,6
     
-    mov bh,2                     ; nomer stranici 
-    mov cx,27                   ; dlina stroki SNAKE
+    get_page_num game_over_page ; nomer stranici 
+    
+    mov cx,27                   ; dlina stroki 
     mov dl,3
     mov dh,2                          
     mov bl,12                                                
     mov al,1                    ; bez atributov   
-    lea bp,gm1
+    lea bp,game_big_word
     
-    call print_str 
+    call print_big_word 
         
     mov bl,4    
     mov counter,6
     mov cx,27 
-    lea bp,ovr1
+    lea bp,over_big_word
     mov dl,9
     
-    call print_str 
+    call print_big_word 
     jmp regme
     
 Won:
     
     mov counter,6
     
-    mov bh,2                    ; nomer stranici 
+    get_page_num game_win_page
+;    mov bh,2                    ; nomer stranici 
     mov cx,22                   ; dlina stroki SNAKE
     mov dl,3
     mov dh,2                          
     mov bl,10                                                
     mov al,1                    ; bez atributov   
-    lea bp,you1
+    lea bp,you_big_word
     
-    call print_str 
+    call print_big_word 
         
     mov bl,2    
     mov counter,6
     mov cx,26 
-    lea bp,won1
+    lea bp,won_big_word
     mov dl,9
     
-    call print_str 
+    call print_big_word 
     
 regme:
      
@@ -1221,7 +1588,7 @@ regme:
     mov cx,10
     mov dh,17
     mov dl,26
-    lea bp,play_agn_str
+    lea bp,play_again_str
     mov ah,13h
     
     int 10h
@@ -1237,10 +1604,12 @@ regme:
     lea bp,exit_str
     
     int 10h
+   
     
-    mov bh,2 
+    get_page_num game_over_page
+   
     mov choice,1
-    call action_choice
+    call make_choice
     
     
     
@@ -1250,128 +1619,64 @@ regme:
     cmp al,2 
     je Rgm
     
-    jmp end_game    
+    jmp game_end    
     
 Play_agn:    
 
-    call new_game
-    call create_field
-    mov_to_page 1
-    je main_loop
+    call set_start_game_state
+    call print_game_page
+    mov_to_page game_page
+    jmp main_loop
     
 Rgm:
-    call new_game
-    call create_field 
-   ; je restart
-    je regm    
+    call set_start_game_state
+    call print_game_page
+    jmp menu
+    
         
     ret   ;;; 
     show_gm_ovr_ekrane endp    
+ 
+ 
 
-;-------   
 
-    show_start_ekrane proc
-    
-    mov_to_page 0
-    
-    mov counter,6
-    
-    mov bh,0                     ; nomer stranici 
-    mov cx,32                   ; dlina stroki SNAKE
-    mov dl,3
-    mov dh,2                          
-    mov bl,13                                                
-    mov al,1                    ; bez atributov   
-    lea bp,snk1
-    
-    call print_str 
-        
-    mov bl,5    
-    mov counter,6
-    mov cx,27 
-    lea bp,gm1
-    mov dl,6
-    
-    call print_str
-    
-    mov bl,7
-    mov cx,4
-    mov dh,17
-    mov dl,26
-    lea bp,play_agn_str    ; Read only 4 first symbols - p
-    mov ah,13h
-    
-    int 10h
-    
-    mov dh,19
-    mov cx,10
-    lea bp,scr_lst_str
-    
-    int 10h
-    
-    mov dh,21
-    mov cx,4
-    lea bp,exit_str
-    
-    int 10h   
-    
-    ret      
-    show_start_ekrane endp  
-
-;----------
-    
-    create_field proc                      
    
-    mov str_num,4
-    
-    mov counter,0                   
+
+;---------------
    
+print_game_page proc 
+    is_inited game_page
+    jc game_page_is_inited
+    
+    get_page_num game_page                                                              
+    
     mov ax, @data                ; v es pomeschaem adres segmenta dannih
-    mov es, ax
-    lea bp,field_line            ; dlia prerivania 
-   
-    mov ah,13h
-       
-    mov bh,1                     ; nomer stranici
-   
-    mov ch,0  
-    mov cl,size                  ; strlen 
-   
-    mov dl,12 ;;                    ; nomer clmn
-    mov al,255                   ; regime - stroka s atributami
-   
-show_line_loop:                        
-   
-    mov dh,str_num              ; nomer stroki
+    mov es, ax       
     
-    cmp counter,1
-    jne skip1
+    mov dh,4
+    mov dl,12   
     
-    add bp,32
+    mov cx,0
+    mov cl,size
+              
+print_field_loop: 
+    mov dl,12
+    mov ah,02h
+    int 10h                       ; move cursor
     
-    int 10h ;;;; 
-    
-    sub bp,32
-    jmp skip2
-       
-skip1:    
-    
-    int 10h ;;;;                    ; vivod stroki 
-    
-skip2:
-      
-    inc str_num
+    mov ah,09h
+    mov al,grass_elem[0]
+    mov bl,grass_elem[1]
      
-    inc counter
-    mov dh,size
-                                   
-    cmp dh,counter              ; vivodim SIZE raz stroky
-    jne show_line_loop 
+    int 10h                       ; set range of grass elems to graphic memory
     
-    mov cx,27                   ; dlina stroki SCORE
-   
-    mov dh,str_num              ; mesto vivoda
-    mov dl,0
+    inc dh
+    cmp dh,20
+    jl  print_field_loop
+    
+    inc dh
+    mov dl,15                
+    mov cx,10                   ; dlina stroki SCORE
                                 ; seriõ cvet dlia SCORE
     mov bl,7                                                
     mov al,1                    ; bez atributov
@@ -1382,8 +1687,14 @@ skip2:
 
     int 10h
     
+    set_inited game_page 
+    
+game_page_is_inited:         
+    
+   
+             
     ret  
-    create_field endp 
+    print_game_page endp 
 
 ;------------  
 
