@@ -36,20 +36,21 @@ assume ds:data
     game_end_page    db  00000110b                
                                                                  
     counter         db  0
-    str_num      db  1      
     
+    empty        =  0  
     
-    empty        =  0
     top          =  1
     right        =  2
     bottom       =  3
     left         =  4 
     
 
-    score_mes    db  "Score: "
-    score_str    db  "000" 
-    score_len    db  10
-    score        dw  0
+    score_mes      db  "Score: "
+    score_str      db  "000" 
+    score_mes_len  =   10 
+    score_str_len  =   3
+    score          dw  0
+    max_score      =   252
     
     head         dw  19
     tail         dw  16                
@@ -57,18 +58,22 @@ assume ds:data
     rotation     db  '2'          ; =>
 
     
-    grass_elem   db  'Ý',0A2h     ; grass         code 0
-    snake_elem   db  'X',230      ; snake body    code 1
+    grass_elem        db  'Ý',lime+green*10h       
+    snake_elem        db  'X',brown+yellow*10h      
     
-    head_elem_u  db  '"',230      ; head up       code 2  
-    head_elem_r  db  ';',230      ; head right    code 3
-    head_elem_d  db  '"',230      ; head down     code 4
-    head_elem_l  db  ':',230      ; head left     code 5
-    head_elem_z  db  ' ',230      ; head closed   code 6
+    head_elem_top     db  '"',brown+yellow*10h      
+    head_elem_right   db  ';',brown+yellow*10h      
+    head_elem_bottom  db  '"',brown+yellow*10h      
+    head_elem_left    db  ':',brown+yellow*10h     
+    head_elem_blink   db  ' ',brown+yellow*10h      
     
-    apple_elem   db  'O',196      ; apple         code 7
+    apple_elem        db  'O',red+light_red*10h 
+    
+    blink_counter     db  0
+    
+        
  
-    delay        dw  4              
+    delay             dw  4              
    
 
     
@@ -136,10 +141,10 @@ assume ds:data
                      db  "| |__  | |  __||   | |  "
                      db  "|____| |_| |___|   |_|  "  
     
-    paus             db  3,3
+    pause_big_word   db  3,3
                      db  3 dup ("Û Û")    
     
-    paus_clr         db  3,3
+    pause_clr        db  3,3
                      db  3 dup ("   ")
    
     play_str         db  "Play",'$'
@@ -161,9 +166,9 @@ assume ds:data
  ;   file_not_found   =   02h
     
     
-    up_arrow_key     =   048h
+    top_arrow_key    =   048h
     right_arrow_key  =   04Dh
-    down_arrow_key   =   050h
+    bottom_arrow_key =   050h
     left_arrow_key   =   04Bh
     
     space_key        =   039h
@@ -199,7 +204,7 @@ assume ds:data
     
     records_file      db '../records.txt',0 
     rec_buf           db 12 dup (?)  
-     
+    
 data ends    
 
 
@@ -237,8 +242,8 @@ regime:
 
     call load_regime_page
     
-    cmp choice,escape_chc
-    je  game_end
+    cmp  choice,escape_chc
+    je   game_end
         
     mov  al,choice
     call set_delay
@@ -247,10 +252,21 @@ game:
     
     call load_game_page
     
-;    mov_to_page game_page             
-;    call print_game_page
-;    call set_start_game_state
+    cmp  choice,game_over_chc
+    je   game_over
+    
+    cmp  choice,win_chc
+    je   game_over
+    
+    jmp  game_end
       
+
+game_over:
+
+
+
+
+
 
      
            
@@ -750,14 +766,14 @@ choice_waiting:  mov  ah,0                        ; prerivanie vvoda simvola s o
                  cmp  al,'w'
                  je   to_upper_choice
     
-                 cmp  ah,up_arrow_key
+                 cmp  ah,top_arrow_key
                  je   to_upper_choice
     
     
                  cmp  al,'s'
                  je   to_lower_choice
     
-                 cmp  ah,down_arrow_key
+                 cmp  ah,bottom_arrow_key
                  je   to_lower_choice
     
     
@@ -786,7 +802,7 @@ to_lower_choice: mov  ah,0
 other_choice:    cmp  ax,enter_key                 ; enter
                  je   choice_is_made
     
-                 cmp  ax,escape_key                      ; esc 
+                 cmp  ax,escape_key                      
                  jne  choice_waiting
     
                  mov  choice,escape_chc
@@ -1053,33 +1069,39 @@ set_delay endp
 ; Procedure that controls the logic of a regime page. 
 ; Saves the selection results to the choice variable.
 
-load_game_page  proc
+load_game_page     proc
                  
-                mov_to_page game_page             
-                call print_game_page
-                call set_start_game_state
+                   mov_to_page game_page             
+                   call print_game_page
+                   call set_start_game_state
 
-game_loop:      call change_rotat
-    
-                call update_score       
-                call update_apple 
+game_loop:         call process_game_key
+                   jc   escape_from_game
+                
+                   call move_tail
+                   jc   win_game
+                                             
+                   call update_apple 
      
-                call set_head
-    
-                call stoping         
-                jmp  game_loop 
+                   call move_head
+                   jc   loose_game
+                
+                   mov  cx,delay 
+                   call stoping 
+                        
+                   jmp  game_loop 
 
-                            
-                            
-                            
-                            
-               ; get_page_num regime_page 
-                ;mov choice,1
-                     
-               ; call make_choice
+                                                       
+escape_from_game:  mov  choice,escape_chc
+                   ret                            
+
+win_game:          mov  choice,win_chc
+                   ret
+
+loose_game:        mov  choice,game_over_chc
                  
-                ret
-load_game_page  endp     
+                   ret
+load_game_page     endp     
 
 
 ;=================================
@@ -1091,10 +1113,7 @@ print_game_page    proc
                    is_inited game_page
                    jc game_page_is_inited
     
-                   get_page_num game_page                                                              
-    
-  ;  mov ax, @data                ; v es pomeschaem adres segmenta dannih
-  ;  mov es, ax       
+                   get_page_num game_page                                                                 
     
                    mov dh,4
                    mov dl,12   
@@ -1122,7 +1141,7 @@ print_field_loop:  mov dl,12
                    mov dl,15                   ; column
                       
                    mov ch,0
-                   mov cl,score_len            ; dlina stroki SCORE
+                   mov cl,score_mes_len            ; dlina stroki SCORE
                                             
                    mov bl,light_gray                                                
                    mov al,1                    ; bez atributov
@@ -1137,11 +1156,6 @@ game_page_is_inited:
                 
                 ret  
 print_game_page endp 
-
-;------------  
-
-
-
 
 
 ;===================================
@@ -1162,17 +1176,12 @@ print_game_page endp
 ; Field size is 16x16  
 ; Score is set to 0
          
-set_start_game_state proc
-     
-                     mov  bx,0                   
-                     mov  dh,empty 
-                                                ;
-clr_loop:            mov  field[bx],dh          ;    for i from 0 to size    
-                                                ;        for j from 0 to size
-                     inc  bx                    ;            field[i][j] = empty
-                     cmp  bx,256                ;
-                     jne  clr_loop              ;
-                                                ;
+set_start_game_state proc 
+    
+                     mov  al,empty
+                     mov  cx,size*size
+                     lea  di,field
+                     rep  stosb                 ;    memset(field, empty, size * size)
                                                 ;
                      mov  field[16],'2'         ;    field[1][0..4] = snake
                      mov  field[17],'2'         ;    
@@ -1197,7 +1206,7 @@ clr_loop:            mov  field[bx],dh          ;    for i from 0 to size
                      call set_elem
                                                                   
                      mov  rotation,'2'          ;    rotation = right   
-                                                ;                                                ;
+                                                ;                                                
                      mov  field[23],'A'         ;    field[1][7] = apple
                                                 ;
                      mov  apple,23              ;    apple = [1][7]
@@ -1215,56 +1224,459 @@ clr_loop:            mov  field[bx],dh          ;    for i from 0 to size
                      ret
 set_start_game_state endp 
 
+;=================================
+;
+; Pocedure for changing rotation of snake.
+; Can only turn left or right relative to the 
+; current position. Read key from keyboard 
+; buffer, if can.
+
+
+process_game_key  proc
+
+                  mov ah,1              
+                  int 16h                 ; check if there is a key in the keyboard buffer
+     
+                  jz  process_end         ; if no key, return
+    
+                  mov ah,0                ; if buffer contains key, save it to ax
+                  int 16h
+       
+                  cmp al,'w'
+                  je  rotate_top
+    
+                  cmp ah,top_arrow_key
+                  je  rotate_top    
+                
+                
+                  cmp al,'d'
+                  je  rotate_right
+    
+                  cmp ah,right_arrow_key
+                  je  rotate_right    
+
   
+                  cmp al,'s'
+                  je  rotate_bottom
+    
+                  cmp ah,bottom_arrow_key
+                  je  rotate_bottom   
+                
+                
+                  cmp al,'a'
+                  je  rotate_left
+                
+                  cmp ah,left_arrow_key
+                  je  rotate_left
+                
+                                
+                  cmp ah,space_key
+                  je  process_pause
+           
+                               
+                  cmp ax,escape_key
+                  je  process_escape
+          
+                
+                  jmp process_end
+
+rotate_top:       cmp rotation,'3'
+                  je  process_end
+    
+                  mov rotation,'1'
+                  jmp process_end
+              
+              
+rotate_right:     cmp rotation,'4'
+                  je  process_end
+    
+                  mov rotation,'2'
+                  jmp process_end      
+             
+             
+rotate_bottom:    cmp rotation,'1'
+                  je  process_end
+    
+                  mov rotation,'3'
+                  jmp process_end 
+           
+                  
+rotate_left:      cmp rotation,'2'
+                  je  process_end
+    
+                  mov rotation,'4'
+                  jmp process_end                            
+       
+       
+process_pause:    call load_pause
+                  jc   process_escape 
+    
+                  mov  cx,1
+                  call stoping
+    
+                  jmp process_game_key
+
+process_escape:   stc                       ; set carry flag
+                  ret
+    
+process_end:      clc                       ; clear carry flag
+                  ret
+process_game_key  endp
  
-;------------
+ 
+;=====================
+;
+; Procedure for processing pause. Wait
+; untill player press space again or leave
+; from game by escape. Set CF if escape,
+; othervice reset it.
+
+load_pause       proc
+     
+                 lea  bp,pause_big_word   
+                 call set_pause
+
+entering_pause:  mov  ah,0                        ; prerivanie vvoda simvola s ojidaniem
+                 int  16h 
     
-    read_1_record proc
+                 cmp  ax,escape_key
+                 je   pause_escape
     
-    mov cl,score_str[0]
-    mov easy[bx+12],cl
+                 cmp  ah,space_key                       ; esli ne probel, to vvodim dalshe
+                 jne  entering_pause     
+     
+                 lea  bp,pause_clr   
+                 call set_pause                          ; clear carry flag
+                 clc 
+                 ret
+
+pause_escape:    stc
+                 
+                 ret
+load_pause       endp  
+ 
+ 
+ 
+;==================
+;  
+; Procedure to print or clear pause.
+; BP - address of pause_big_word or pause_clr
+
+set_pause   proc
     
-    mov cl,score_str[1]
-    mov easy[bx+13],cl
+            mov al,1                    ; bez atributov
     
-    mov cl,score_str[2]
-    mov easy[bx+14],cl
+            get_page_num game_page     
+            mov bl,light_gray                  
     
-    call read_date
-    mov easy[bx+19],ah
-    mov easy[bx+20],al
+            mov dh,2                  ; mesto vivoda
+            mov dl,2                                
+                                                                   
+            call print_big_word
+       
+            ret
+set_pause   endp    
+  
+
+;==================
+;
+; Procedure for move tail. If apple is eaten, tail
+; don't move. If all field filled by snake, set CF.
+; If not, reset CF.
+
+move_tail        proc
+        
+                 mov  bx,apple             ; If on 'apple' index not apple, it means 
+                 cmp  field[bx],'A'        ; it was eaten in the previous iteration.
+                 jne  inc_score            ; Not move tail with moving head.        
+                         
+                 mov  bx,tail 
+                 call move
     
-    inc si
-    call read_date
-    mov easy[bx+22],ah
-    mov easy[bx+23],al
+                 mov  ax,tail   
+                 mov  tail,bx
     
-    inc si
-    call read_date
-    mov easy[bx+27],ah
-    mov easy[bx+28],al
-               
-    ret    
-    read_1_record endp      
+                 mov  bx,ax   
+         
+                 mov  dh,empty 
+                 mov  field[bx],dh          ; clear old tail on field
+    
+                 mov  cx,0                  ; grass elem index
+                 call set_elem             ; clear old tail on page
+    
+                 jmp  tail_move_end
+
+inc_score:       inc  score
+    
+                 cmp  score,max_score
+                 jne  not_won
+    
+                 mov  choice,1
+                 stc
+                 ret
+     
+not_won:         mov  ax,score 
+                 call score_to_str
+                 
+                 lea  bp,score_str      
+                 
+                 mov  bl,light_gray   
+    
+                 get_page_num game_page
+    
+                 mov  cx,score_str_len                  
+    
+                 mov  dh,21                                ; Row
+                 mov  dl,22                                ; Column
+       
+                 mov  al,1                                 ; no attributes
+     
+                 mov  ah,13h                               ; print new score
+                 int  10h 
+     
+tail_move_end:   clc 
+                 ret
+move_tail        endp  
+
+
+;====================
+;
+; Procedure for set cell on game page by
+; field index.
+; BX - field index
+; CX - element index
+
+set_elem proc
+        
+         push bx    
+    
+         mov  dh,bl
+         mov  dl,bl
+    
+         shr  dh,4                     ; row = field_index / field_size   
+         and  dl,00001111b             ; col = field_index % field_size
+    
+         add  dh,4                     ; row_num += 4              field offset from left top corner
+         add  dl,12                    ; col_num += 12  
+    
+         shl  cl,1                     ; shift to get word index
+
+         mov  di,cx    
+         lea  bp,grass_elem[di]
+    
+         get_page_num game_page        
+   
+         mov cx,1                      ; print one symbol
+    
+         mov al,255                    ; string with attributes
+    
+         mov ah,13h    
+         int 10h                       ; print needed symbol
+            
+         pop bx   
+        
+         ret    
+set_elem endp
+
+
+;=====================
+;
+; Procedure to set new apple.
+
+update_apple    proc
+    
+                mov  bx,apple
+    
+                cmp  field[bx],'A'
+                jne  try_set_apple
+    
+                ret
+    
+try_set_apple:  mov  ah,2Ch             ; get current time
+                int  21h                ; dh - seconds, dl - centiseconds 
+                
+                mov al,60               ; Since the smaller the unit of measurement, the more unpredictable 
+                mul dl                  ; the value will be, seconds and centiseconds are best suited 
+                mov dl,dh               ; for obtaining a random number. 
+                mov dh,0                 
+                add ax,dx               ; ax = cs * 60 + s
+                mov dx,0
+                                        ; Now AX value will be a random number from [0,5999]
+                mov cx,23               ; Divide this value by 23 and get an almost 
+                div cx                  ; uniform distribution of the index
+                
+                mov bh,0                ; al - random value from [0,255]
+                mov bl,al
+    
+                cmp  field[bx],empty    ; if new index is not empty index, try again
+                jne  try_set_apple    
+       
+                mov  field[bx],'A'
+                mov  apple,bx    
+    
+                mov  cx,7               ;;; 7 - cod elementa apla
+                call set_elem
+        
+                ret    
+update_apple    endp 
+
+
+;==================
+;
+; Procedure for
+
+move_head   proc
+    
+            mov bx,head
+    
+            mov  cx,1                 ;;; snake body
+            call set_elem
+    
+            call move
+            mov  head,bx
+    
+            cmp  field[bx],empty
+            je   not_lose
+    
+            cmp  field[bx],'A'
+            je   not_lose
+    
+            stc
+            ret
+    
+not_lose:   mov  cl,rotation 
+            mov  field[bx],cl
+           
+            inc  blink_counter 
+            and  blink_counter,00000111b          ; every 8 frames blink
+            cmp  blink_counter,00000111b
+            jne  not_blink    
+    
+            mov  cx,6
+            jmp  set_h
+
+not_blink:  sub  cl,47
+            mov  ch,0
+    
+set_h:      call set_elem         
+            clc
+    
+            ret    
+move_head   endp    
+
+
+;===================
+;
+; Procedure for realize delay
+; CX - needed delay. Delay time = CX*256/1000 s.
+
+stoping proc    
+        
+        mov dx,0         
+        mov ah,86h  
+    
+        int 15h             
+        
+        ret
+stoping endp  
+
+
+;=====================
+;
+; Procedure to move field cell by it rotation.
+; BX - index of cell
+
+move proc 
+     
+     mov al,field[bx]
+     sub al,49    
+     mov ah,0              ; AX - index of direction
+     
+     push to_left
+     push to_bottom
+     push to_right
+     push to_top
+     
+     mov  bp,sp
+     shl  ax,1
+     add  bp,ax
+     mov  ax,[bp]
+     
+     call ax               ; call [to_top,to_bottom,to_right,to_top][direction_index]
+     
+     add  sp,2*4           ; pop 4
+          
+     ret    
+move endp        
 
 ;-----------
 
-    read_date proc
+to_top proc
     
-    mov ax,0
-    mov al,rec_buf[si]
-    
-    shl ax,4
-    shr al,4
-    
-    add ah,48
-    add al,48
-           
-    ret    
-    read_date endp    
+       sub bl,size          ; esli index - size menshe 0
+                            ; to on avtomatom opustitca k         
+       ret                  ; nijnei granice
+to_top endp    
 
-;-------------------  
+;-----------
+
+to_bottom proc    
     
+          add bl,size        ; esli index - size bolshe chem size^2
+                             ; to on avtomatom podnimetca k         
+          ret                ; verhnei granice   
+to_bottom endp          
+
+;-----------
+
+to_right proc 
+    
+         mov al,bl
+ 
+         and al,00001111b
+         inc al                 ; esli periehod 
+         and al,00010000b       ; otnimetca size
+    
+         sub bl,al
+    
+         inc bl 
+      
+         ret
+to_right endp
+    
+;-----------
+      
+to_left proc
+  
+        dec bl
+   
+        mov al,bl
+ 
+        and al,00001111b
+        inc al                 ; esli periehod 
+        and al,00010000b       ; dobavitca size
+    
+        add bl,al
+               
+        ret    
+to_left endp  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ 
+;-------------------    
     
     update_record proc
     
@@ -1367,439 +1779,15 @@ exit:
 
 
 
-;-----------
-    print_pause proc
-    
-    mov al,1                    ; bez atributov
-    
-    
-    get_page_num game_page     
-;    mov bh,1                     ; nomer stranici
-    mov bl,7                   ; seriõ cvet dlia SCORE 
-    
-    mov cx,3                   ; dlina stroki SNAKE
-    mov counter,3
-    
-    mov dh,2                  ; mesto vivoda
-    mov dl,2                                
-                                                                   
-    call print_big_word
-       
-    ret
-    print_pause endp    
 
 
 ;------------
 
-    pause proc
-    
-
-        
-    lea  bp,paus   
-    call print_pause
-
-entering_pause:                 
-                   
-    mov ah,0                        ; prerivanie vvoda simvola s ojidaniem
-    int 16h 
-    
-    cmp ah,1                        ; esli esc, to exit
-    je game_end
-    
-    cmp ah,57                       ; esli ne probel, to vvodim dalshe
-    jne entering_pause     
-     
-    lea bp,paus_clr   
-    call print_pause 
-     
-               
-    ret
-    pause endp  
-;------------ 
-
-stoping proc
-    
-        mov cx,delay 
-        mov dx,0         
-        mov ah,86h  
-    
-        int 15h             
-        
-        ret
-stoping endp   
-
-
-;-----------
-
-    update_score proc
-        
-    mov bx,apple
-    cmp field[bx],'A'
-    jne inc_score                  
-                         
-    mov bx,tail 
-    call move
-    
-    mov ax,tail   
-    mov tail,bx
-    
-    mov bx,ax   
-         
-    mov dh,empty 
-    mov field[bx],dh     
-    
-    mov cx,0
-    call set_elem
-    
-    jmp apl
-
-inc_score:  
-
-    inc score
-    
-    cmp score,252
-    jne not_won
-    
-    mov choice,1
-    jmp game_end;;;;;;;;;;;
-     
-not_won:
-    
-    mov  ax,score 
-    call score_to_str
-    
-    
-    mov bl,7   
-    
-    get_page_num game_page
-    
-    mov cx,3                   ; dlina stroki
-    
-    mov dh,21
-    mov dl,22
-     
-    mov ax, @data                ; v es pomeschaem adres segmenta dannih
-    mov es, ax   
-    
-    
-    
-    lea bp,score_str            ; dlia prerivania  
-    mov al,1 
-     
-     
-    mov ah,13h
-   
-    int 10h 
-        
-    
-apl:    
-        
-    ret
-    update_score endp    
-
-
- 
-
-;-----------   
-    
-    set_head proc
-    
-    mov bx,head
-    
-    mov cx,1
-    call set_elem
-    
-    call move
-    mov head,bx
-    
-    mov  dh,empty
-    cmp field[bx],dh
-    je skip
-    
-    cmp field[bx],'A'
-    je skip
-    
-    mov choice,0      ; vivodit GAME OVER
-    jmp game_end;;;;;;;;;;
-    
-skip:
-    
-    mov ah,2ch      ; schitivaem vremia
-    int 21h         ; v dh - sekundi, v dl - santisekundi 
-    
-    mov al,rotation 
-    mov field[bx],al
-    
-    and dx,000001110111111b
-    cmp dx,50
-    jg not_closed
-    
-    mov cx,6
-    jmp set_h
-
-not_closed:
-        
-    sub al,47
-    mov ah,0
-    
-    mov cx,ax
-    
-set_h:        
-    
-    call set_elem
-    
-    
-    ret    
-    set_head endp    
-
-;------------
-
-    set_elem proc
-        
-    push bx    
-    
-    mov al,bl
-    mov ah,bl
-    
-    shr al,4            ; chastnoe ot delenia na 16
   
-    and ah,00001111b    ; ostatok ot delenia na 16
-    
-    add al,4            ; +4 dlia nomera stroki
-    add ah,12            ; +12 dlia nomera stolbca
-    
-    mov dx, @data                ; v es pomeschaem adres segmenta dannih
-    mov es, dx
-    
-    shl cl,1            ; sdvig dlia poluchenia nujnogo elementa
-    
-    push bx
-    mov bx,cx
-    
-    lea bp,grass_elem[bx]
-    
-    pop bx 
-    
-
-    get_page_num game_page        ; nomer stranici
-   
-    mov ch,0  
-   
-   mov cl,1  
-   
-    mov dl,ah                     ; nomer clmn
-    mov dh,al              ; nomer stroki
-    
-    mov al,255                   ; regime - stroka s atributami
-    mov ah,13h
-    
-    int 10h
-    
-        
-    pop bx   
-        
-    ret    
-    set_elem endp
-    
-;------------   
-
-    update_apple proc
-    
-    mov bx,apple
-    
-    cmp field[bx],'A'
-    jne try_set_apple
-    
-    ret
-    
-try_set_apple:
-
-    mov ah,2ch      ; schitivaem vremia
-    int 21h         ; v dh - sekundi, v dl - santisekundi 
-    
-    mov dh,dl
-    shr dh,1        ; randomim
-                    ; dl *= 2,5
-    shl dl,1        ; dh = 0
-    add dl,dh       
-    
-    mov dh,0        
-    
-    mov bx,dx       ; tepier v bx index apla
-    
-    mov  ah,empty
-    cmp field[bx],ah  ; esli popali v snake, to randomim zanogo
-    jne try_set_apple    
-       
-    mov field[bx],'A'
-    mov apple,bx    
-    
-    mov cx,7          ; 7 - cod elementa apla
-    call set_elem
-        
-    ret    
-    update_apple endp    
-
-
-;------------
-
-    move proc   ; v bx lejit index togo, chto nada dvigat
-    
-    cmp field[bx],'1'
-    jne not_1    
-    call to_up
-    ret    
-not_1:        
-    cmp field[bx],'2'
-    jne not_2    
-    call to_right
-    ret
-not_2:    
-    cmp field[bx],'3'
-    jne not_3    
-    call to_down
-    ret
-not_3: 
-    
-    call to_left
-        
-    ret    
-    move endp        
 
 ;-----------
 
-    to_up proc
-    
-    sub bl,16          ; esli index - size menshe 0
-                       ; to on avtomatom opustitca k         
-    ret                ; nijnei granice
-    to_up endp    
 
-;-----------
-
-    to_down proc    
-    
-    add bl,16          ; esli index - size bolshe chem size^2
-                       ; to on avtomatom podnimetca k         
-    ret                ; verhnei granice   
-    to_down endp          
-
-;-----------
-
-    to_right proc 
-    
-    mov al,bl
- 
-    and al,00001111b
-    inc al                 ; esli periehod 
-    and al,00010000b       ; otnimetca size
-    
-    sub bl,al
-    
-    inc bl 
-      
-    ret
-    to_right endp
-    
-;-----------
-      
-    to_left proc
-  
-    dec bl
-   
-    mov al,bl
- 
-    and al,00001111b
-    inc al                 ; esli periehod 
-    and al,00010000b       ; dobavitca size
-    
-    add bl,al
-               
-    ret    
-    to_left endp    
-
-;-----------
-
-    change_rotat proc
-
-check_char:
-    
-    mov ah,1             ; prerivanie vvoda simvola v bufer clavi
-    int 16h  
-     
-    jz repit  
-    
-    mov ah,0             ; esli est simvol v bufere, to chitaem
-    int 16h
-       
-    cmp al,'w'
-    je w
-    
-    cmp ah,048h
-    jne not_w    
-w:    
-    cmp rotation,'3'
-    je repit
-    
-    mov rotation,'1'
-    ret
-not_w:
-
-    cmp al,'d'
-    je d
-    
-    cmp ah,04Dh
-    jne not_d    
-d:     
-    cmp rotation,'4'
-    je repit
-    
-    mov rotation,'2'
-    ret   
-not_d:     
-    cmp al,'s'
-    je s
-    
-    cmp ah,050h
-    jne not_s    
-s:   
-    cmp rotation,'1'
-    je repit
-    
-    mov rotation,'3'
-    ret   
-not_s: 
-    cmp al,'a'
-    je a
-    
-    cmp ah,04Bh
-    jne not_a    
-a:    
-    cmp rotation,'2'
-    je repit
-    
-    mov rotation,'4'
-    ret   
-not_a:
-    cmp al,' '
-    jne not_pause 
-    
-    call pause 
-    
-    mov cx,1
-    call stoping
-    
-    jmp check_char 
-    
-not_pause:
-
-    cmp al,27
-    je game_end
-    
-repit:    
-    
-    ret
-    change_rotat endp
 
 
 ;--------
@@ -1913,7 +1901,11 @@ Rgm:
     ret   ;;; 
     show_gm_ovr_ekrane endp    
  
- 
+
+
+
+
+
 
    
 
