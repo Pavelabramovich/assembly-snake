@@ -4,6 +4,10 @@ assume ds:data
                          
     size            =  16                                                            
     field           db  256 dup (?)
+
+; Each word in graphics memory is interpreted as follows: 
+; the first byte is the character, the next 4 bits are the character color 
+; and the last 4 are the background color.
     
     black           = 00h
     blue            = 01h
@@ -22,9 +26,7 @@ assume ds:data
     yellow          = 0Eh
     white           = 0Fh
     
-; Each word in graphics memory is interpreted as follows: 
-; the first byte is the character, the next 4 bits are the character color 
-; and the last 4 are the background color.
+
                                           
 
     menu_page        db  00000000b      ; first bit will be used to store initialization state  
@@ -33,7 +35,7 @@ assume ds:data
     game_page        db  00000011b
     game_over_page   db  00000100b          
     game_win_page    db  00000101b 
-    game_end_page    db  00000110b                
+    exit_page        db  00000110b                
                                                                  
     counter         db  0
     
@@ -152,18 +154,18 @@ assume ds:data
     score_list_str   db  "Score list",'$'
     exit_str         db  "Exit",'$' 
         
-    play_chc         =   1
-    score_list_chc   =   2 
+    play_chc          =   1
+    score_list_chc    =   2 
     
-    menu_chc         =   1
+    menu_chc          =   1
     
-    game_over_chc    =   1
-    win_chc          =   2
+    game_over_chc     =   1
+    win_chc           =   2
     
-    escape_chc       =   255
-    
-    
- ;   file_not_found   =   02h
+    play_again_chc    =   1
+    back_to_menu_chc  =   2
+         
+    escape_chc        =   255
     
     
     top_arrow_key    =   048h
@@ -194,8 +196,10 @@ assume ds:data
     rec_monts_offset  = 22
     rec_year_offset   = 27                               
                                     
-                                    
-    cng_rgm      db  "Back to menu"    
+    your_res_str      db  "Your result: "
+    your_res_str_len  =   13
+                             
+    back_to_menu_str  db  "Back to menu",'$'    
                       
      
     choice       db  1 
@@ -227,7 +231,7 @@ menu:
     cmp  choice,score_list_chc
     je   score_list
     
-    jmp  game_end
+    jmp  game_exit
 
 score_list:
     
@@ -236,14 +240,14 @@ score_list:
     cmp  choice,menu_chc
     je   menu
     
-    jmp  game_end
+    jmp  game_exit
  
 regime:
 
     call load_regime_page
     
     cmp  choice,escape_chc
-    je   game_end
+    je   game_exit
         
     mov  al,choice
     call set_delay
@@ -252,27 +256,22 @@ game:
     
     call load_game_page
     
-    cmp  choice,game_over_chc
-    je   game_over
-    
-    cmp  choice,win_chc
-    je   game_over
-    
-    jmp  game_end
-      
+    cmp  choice,escape_chc
+    je   game_exit  
 
-game_over:
-
-
-
-
-
-
-     
-           
 game_end:
+    
+    call load_game_end_page
 
-   call show_end_gm_ekrane
+    cmp  choice,play_again_chc
+    je   game
+        
+    cmp  choice,back_to_menu_chc
+    je   menu
+           
+game_exit:
+
+   jmp  load_exit_page
 
 
 
@@ -1070,10 +1069,11 @@ set_delay endp
 ; Saves the selection results to the choice variable.
 
 load_game_page     proc
-                 
-                   mov_to_page game_page             
+                               
+                   call set_start_game_state             
                    call print_game_page
-                   call set_start_game_state
+                   
+                   mov_to_page game_page                   ; first clear field, then move to page
 
 game_loop:         call process_game_key
                    jc   escape_from_game
@@ -1093,13 +1093,14 @@ game_loop:         call process_game_key
 
                                                        
 escape_from_game:  mov  choice,escape_chc
-                   ret                            
+                   jmp  end_game                            
 
 win_game:          mov  choice,win_chc
-                   ret
+                   jmp  end_game
 
 loose_game:        mov  choice,game_over_chc
                  
+end_game:          call update_record
                    ret
 load_game_page     endp     
 
@@ -1109,10 +1110,7 @@ load_game_page     endp
 ; Pocedure for displaying a game page 
 
 print_game_page    proc 
-                
-                   is_inited game_page
-                   jc game_page_is_inited
-    
+                    
                    get_page_num game_page                                                                 
     
                    mov dh,4
@@ -1135,6 +1133,29 @@ print_field_loop:  mov dl,12
                    cmp dh,20
                    jl  print_field_loop
                    
+                   mov  cl,1
+                   mov  bx,16
+                   call set_elem
+                     
+                   mov  bx,17
+                   call set_elem
+                     
+                   mov  bx,18
+                   call set_elem
+                     
+                   mov  cl,3
+                   mov  bx,19
+                   call set_elem
+                   
+                   
+                   
+                   mov  cl,7
+                   mov  bx,23
+                   call set_elem
+                   
+                   
+                   get_page_num game_page
+                   
                    lea bp,score_mes            ; dlia prerivania  
                    
                    mov dh,21                   ; row
@@ -1150,12 +1171,8 @@ print_field_loop:  mov dl,12
 
                    int 10h
     
-                   set_inited game_page 
-    
-game_page_is_inited:         
-                
-                ret  
-print_game_page endp 
+                   ret  
+print_game_page    endp 
 
 
 ;===================================
@@ -1190,31 +1207,13 @@ set_start_game_state proc
                                                 ;
                      mov  tail,16               ;    tail = [1][0]
                      mov  head,19               ;    head = [1][3] 
-                     
-                     mov  cl,1
-                     mov  bx,16
-                     call set_elem
-                     
-                     mov  bx,17
-                     call set_elem
-                     
-                     mov  bx,18
-                     call set_elem
-                     
-                     mov  cl,3
-                     mov  bx,19
-                     call set_elem
-                                                                  
+                                                                                      
                      mov  rotation,'2'          ;    rotation = right   
                                                 ;                                                
                      mov  field[23],'A'         ;    field[1][7] = apple
                                                 ;
                      mov  apple,23              ;    apple = [1][7]
-                     
-                     mov  cl,7
-                     mov  bx,23
-                     call set_elem
-            
+                          
                      mov  score,0
                 
                      mov  score_str[0],'0'
@@ -1460,9 +1459,13 @@ set_elem proc
          add  dl,12                    ; col_num += 12  
     
          shl  cl,1                     ; shift to get word index
-
-         mov  di,cx    
-         lea  bp,grass_elem[di]
+         
+         push si
+         
+         mov  si,cx    
+         lea  bp,grass_elem[si]
+         
+         pop  si
     
          get_page_num game_page        
    
@@ -1602,7 +1605,7 @@ move proc
      add  bp,ax
      mov  ax,[bp]
      
-     call ax               ; call [to_top,to_bottom,to_right,to_top][direction_index]
+     call ax               ; call [to_top,to_right,to_bottom,to_left][direction_index]
      
      add  sp,2*4           ; pop 4
           
@@ -1662,254 +1665,178 @@ to_left proc
 to_left endp  
 
 
+;=====================
+;
+; Procedure for
 
-
-
-
-
-
-
-
-
-
-
-
-
- 
-;-------------------    
-    
-    update_record proc
-    
-    lea dx,records_file ;    
-    
-    mov ah,3Dh                          ; otkrit suschestvuuschiõ file
-    mov al,00h                          ; tolko dla chtenia    
-    
-    int 21h    
-    jc exit                             ; esli oshibka - vihod   
-    
-    mov bx,ax                           ; bx - file identifikator 
-    mov di,01                           ; di - STDOUT identifikator
-    
-    mov cx,12                           ; razmer bloka dla chtenia
-    lea dx,rec_buf                      ; bufer 
-    
-    mov ah,3Fh
-    int 21h
-    
-    jc exit                             ; esli oshibka - zakrit file      
-    
-    
-    
+update_record  proc
             
-            
-    mov ax,delay
-    sub ax,2
+               mov dx,4
+               sub dx,delay                         ; get index of current regime  
     
-    shl ax,2
+               mov bx,dx
+               shl bx,2                         ; get index of regime in file
     
-    mov bx,ax
+               mov cx,score
     
-    mov ax,score
+               mov ah,0
+               mov al,rec_buf[bx]
     
-    mov ch,0
-    mov cl,rec_buf[bx]
-    
-    cmp ax,cx   
-    jng exit 
+               cmp cx,ax   
+               jna end_update 
                 
-    mov rec_buf[bx],al
+               mov rec_buf[bx],cl
     
-    mov ah,4
-    int 1Ah
+               mov bx,dx
+               lea dx,records_file     
     
-    sub cx,2000h
-    
-    inc bx
-    mov rec_buf[bx],dl
-    
-    inc bx
-    mov rec_buf[bx],dh
-    
-    inc bx
-    mov rec_buf[bx],cl
-    
-    
-    lea dx,records_file ;    
-    
-    mov ah,3Dh                          ; otkrit suschestvuuschiõ file
-    mov al,1                            ; tolko dla chtenia  
+               mov ah,3Dh                          ; otkrit suschestvuuschiõ file
+               mov al,1                            ; tolko dla chtenia  
    
-    int 21h    
-    jc exit                             ; esli oshibka - vihod
-       
-    mov bx,ax                           ; bx - file identifikator 
+               int 21h    
+               jc  end_update                      ; esli oshibka - vihod
+               
+               push bx
+               
+               mov dx,bx   
+               mov bx,ax                           ; bx - file identifikator 
+               mov al,cl
+    
+               call set_record
+               
+               pop dx
+               
+               call set_record_str
+               
+               mov ah,3Eh                           ; close file
+               int 21h
+                                                             
+end_update:    ret
+update_record  endp  
+
+
+;=======================
+;
+; Procedure for
+
+load_game_end_page proc
+                   
+                   cmp  choice,win_chc
+                   je   load_won
+                   
+                   mov  dl,game_over_page
+                   clc
+                   jmp  page_num_set
+                   
+load_won:          mov  dl,game_win_page                   
+                   stc
+                   
+page_num_set:      mov_to_page dl
+                   
+                   call print_game_end_page
+                   
+                   mov choice,1
+                   call make_choice
+                                      
+                   ret
+load_game_end_page endp    
+
+
+;=====================
+;
+; Procedure for print page in game end
+; CF - win flag. If set, win page will be printed.
+; Otherwice game over page.
+
+print_game_end_page proc
+                                   
+                    jc  print_won
+                    
+                    get_page_num game_over_page
+                    is_inited bl
+                    jc   end_page_inited
+ 
+                    lea bp,game_big_word                    
+                    mov dl,3
+                    mov dh,2                       
+                    mov bl,light_red 
+                                        
+                    call print_big_word                    
+                    
+                    lea bp,over_big_word
+                    mov dl,9
+                    mov bl,red
+                    
+                    call print_big_word
+                    jmp  game_end_mes
+                    
+print_won:          get_page_num game_win_page
+                    is_inited bl
+                    jc   end_page_inited
+                    
+                    lea bp,you_big_word
+                    mov dl,3
+                    mov dh,2  
+                    mov bl,lime
+                    
+                    call print_big_word
+                    
+                    lea bp,won_big_word
+                    mov dl,9
+                    mov bl,green
+                    
+                    call print_big_word
+
+game_end_mes:       push bx
+
+                    lea bp,your_res_str
+                    mov dh,19
+                    mov dl,3
+                    mov al,10000000b 
+                    mov cx,your_res_str_len
+                    mov bl,light_gray
+                    
+                    mov ah,13h
+                    int 10h 
+                    
+                    mov si,sp
+                    mov bx,[si]             ; pick bx
+                    
+                    lea  ax,play_again_str
+                    lea  cx,back_to_menu_str
+                    lea  dx,exit_str
+                
+                    call print_choices
+                                      
+                    set_inited bl
+                    pop bx
+                    
+end_page_inited:    lea bp,score_str 
+                    mov al,10000000b
+                    mov cx,score_str_len
+                    mov dl,3
+                    add dl,your_res_str_len
+                    mov dh,19 
+                    mov bl,light_gray
+                    
+                    mov ah,13h
+                    int 10h                      
+                                        
+                    ret
+print_game_end_page endp
+
+
+
+load_exit_page proc
    
-    mov cx,12                           ; razmer bloka dla chtenia
-    lea dx,rec_buf                      ; bufer 
-    
-    mov ah,40h
-    int 21h
-    
-    mov ah,3Eh
-    int 21h
-                                                            
-exit:
-    
-    ret
-    update_record endp     
-
-
-
-
-;-----------
-
-    show_end_gm_ekrane proc
-   
-    mov_to_page game_end_page 
+               mov_to_page exit_page 
                      
-    mov ax,4C00h              ; zakanchivaem programmu           
-    int 21h  
+               mov ax,4C00h                   ; zakanchivaem programmu           
+               int 21h  
       
-    show_end_gm_ekrane endp  
+load_exit_page endp  
  
-  
-  
-
-
-
-
-
-
-;------------
-
-  
-
-;-----------
-
-
-
-
-;--------
-    
-    show_gm_ovr_ekrane proc
-    
-    mov_to_page game_over_page
-    
-    cmp choice,1
-    je Won
-    
-    mov counter,6
-    
-    get_page_num game_over_page ; nomer stranici 
-    
-    mov cx,27                   ; dlina stroki 
-    mov dl,3
-    mov dh,2                          
-    mov bl,12                                                
-    mov al,1                    ; bez atributov   
-    lea bp,game_big_word
-    
-    call print_big_word 
-        
-    mov bl,4    
-    mov counter,6
-    mov cx,27 
-    lea bp,over_big_word
-    mov dl,9
-    
-    call print_big_word 
-    jmp regme
-    
-Won:
-    
-    mov counter,6
-    
-    get_page_num game_win_page
-;    mov bh,2                    ; nomer stranici 
-    mov cx,22                   ; dlina stroki SNAKE
-    mov dl,3
-    mov dh,2                          
-    mov bl,10                                                
-    mov al,1                    ; bez atributov   
-    lea bp,you_big_word
-    
-    call print_big_word 
-        
-    mov bl,2    
-    mov counter,6
-    mov cx,26 
-    lea bp,won_big_word
-    mov dl,9
-    
-    call print_big_word 
-    
-regme:
-     
-    mov choice,0 
-     
-    mov bl,7
-    mov cx,10
-    mov dh,17
-    mov dl,26
-    lea bp,play_again_str
-    mov ah,13h
-    
-    int 10h
-    
-    mov dh,19
-    mov cx,13
-    lea bp,cng_rgm
-    
-    int 10h
-    
-    mov dh,21
-    mov cx,4
-    lea bp,exit_str
-    
-    int 10h
-   
-    
-    get_page_num game_over_page
-   
-    mov choice,1
-    call make_choice
-    
-    
-    
-    cmp al,1
-    je Play_agn
-    
-    cmp al,2 
-    je Rgm
-    
-    jmp game_end    
-    
-Play_agn:    
-
-    call set_start_game_state
-    call print_game_page
-    mov_to_page game_page
-;    jmp main_loop
-    
-Rgm:
-    call set_start_game_state
-    call print_game_page
-    jmp menu
-    
-        
-    ret   ;;; 
-    show_gm_ovr_ekrane endp    
  
-
-
-
-
-
-
-   
-
-
 code ends 
  
 end start       
