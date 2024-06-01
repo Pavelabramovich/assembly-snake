@@ -79,7 +79,7 @@ assume ds:data
 ; will be used to store page initialization state.     
                                              
     menu_page         db   00000000b       
-    score_list_page   db   00000001b
+    records_page      db   00000001b
     regime_page       db   00000010b              
     game_page         db   00000011b
     game_over_page    db   00000100b          
@@ -89,15 +89,15 @@ assume ds:data
 ; Choices constants:
     
     play_chc          =    1
-    score_list_chc    =    2 
+    records_chc       =    2 
     
     menu_chc          =    1
     
     game_over_chc     =    1
     win_chc           =    2
     
-    play_again_chc    =    1        ;
-    back_to_menu_chc  =    2        ;
+    play_again_chc    =    1        
+    back_to_menu_chc  =    2        
          
     escape_chc        =    255
     
@@ -105,13 +105,27 @@ assume ds:data
 
     choice            db   1 
     choice_ptr        db   '>'
-    choice_clear      db   ' '     
+    choice_clear      db   ' '
     
-; Variables to records processing:
+    first_choice_row  =    17
+    first_choice_col  =    24     
+    
+; Variables to records processing. The data in the file 
+; should be stored as follows: four bytes are allocated 
+; for each regime, they are stored in the file in the order: 
+; easy, medium, hard. First byte of each regime is its record. 
+; The maximum value is 252 = field_size - start_snake_size. 
+; The next three bytes of regime describe the day, month and 
+; year in the century (for 2021 it will be 21) in BCD format.
 
     records_file      db   '../records.txt',0 
-    rec_buf           db   12 dup (?)  
-    rec_buf_len       =    12
+    
+    record_len        =    4
+    regime_count      =    3
+    
+    rec_buf_len       =    record_len*regime_count
+    rec_buf           db   rec_buf_len dup (?)  
+    
     
     default_record    =    1    
     
@@ -201,7 +215,7 @@ assume ds:data
 
     play_str          db   "Play",'$'
     play_again_str    db   "Play again",'$'
-    score_list_str    db   "Score list",'$'   
+    records_str       db   "Records",'$'   
     back_to_menu_str  db   "Back to menu",'$'     
     exit_str          db   "Exit",'$'
         
@@ -230,6 +244,8 @@ assume ds:data
 ; Other variables:
 
     counter           db   0
+    
+    to_lower_mask     =    00100000b
        
 data ends    
 
@@ -246,12 +262,12 @@ menu:                 call load_menu_page
                       cmp  choice,play_chc
                       je   regime
         
-                      cmp  choice,score_list_chc
-                      je   score_list
+                      cmp  choice,records_chc
+                      je   records
     
                       jmp  game_exit
 
-score_list:           call load_score_list_page
+records:              call load_records_page
     
                       cmp  choice,menu_chc
                       je   menu
@@ -282,21 +298,25 @@ game_end:             call load_game_end_page
 game_exit:            jmp  load_exit_page
                
 
-
-;===================================
+                                                           
+;==========================================================
 ;
-; Procedure for initial game setup. 
-; Called once at the very beginning of the program. 
-
+; Procedure for initial game setup. Called once at the very 
+; beginning of the program.
+;
+; Entry: No args.
+; Returns: No return. 
+; Changes: AX,BL,DS,ES.
+;
 set_start_settings    proc  
                                                        
-                      mov  ax,0000h                        ; Set a small screen and clean it  
+                      mov  ax,0000h                        ; Set a small screen and clean it.  
                       int  10h                       
-          
-                      mov  ax,1003h                        ; Set bright colors
+                            
                       mov  bl,0
-    
-                      int  10h                 
+                      
+                      mov  ax,1003h                        
+                      int  10h                             ; Set bright colors.
 
                       mov  ax, @data                
                       mov  ds, ax            
@@ -305,52 +325,56 @@ set_start_settings    proc
                       ret                   
 set_start_settings    endp
 
-
-;===================================
+                                                          
+;==========================================================
 ;
-; Pocedure that save records from file.
-
+; Pocedure that saves records from file to rec_buf. If 
+; record file does not exists, creates new file with 
+; default records.
+;
+; Entry: No args.
+; Returns: No return.
+; Changes: AX,BX,CX,DX,counter
+;
 set_records           proc
 
                       lea  dx,records_file     
-    
-                      mov  ah,3Dh                          ; open existed file in readonly regime
+                                                  
                       mov  al,00b                          
-    
-                      int  21h    
+                      mov  ah,3Dh
+                      int  21h                             ; Open existed file in readonly mode.
                       jc   open_error
                                          
-                      mov  bx,ax                           ; BX - file identifier 
-                      mov  di,01                           ; DI - STDOUT identifier
-    
+                      mov  bx,ax                           ; BX - file identifier. 
+
                       mov  cx,rec_buf_len                  
                       lea  dx,rec_buf                     
                     
                       mov  ah,3Fh                          
-                      int  21h                             ; read from file
+                      int  21h                             ; Read from file.
                       jc   close_file                      
                      
                       push bx
                       mov  counter,0
                       jmp  set_record_str_loop                    
 
-open_error:           cmp  ax,03h                          ; 02h and 03h - file not found errors
+open_error:           cmp  ax,03h                          ; 02h and 03h - file not found errors.
                       jg   end_of_reading
-                                                     
-                      mov  ah,5Bh
-                      mov  al,1
-                      mov  cx,0                            ; create and open file 
-                      int  21h
+
+                      mov  cx,00000000b                    ; Simple file with read-write mode
+                      
+                      mov  ah,5Bh                             
+                      int  21h                             ; Create and open file.
                       jc   end_of_reading
                      
-                      mov  bx,ax                           ; bx - new file identifier 
+                      mov  bx,ax                           ; BX - new file identifier. 
                       push bx
                      
                       mov  counter,0
      
 init_file_loop:       mov  dl,counter                      ; for (counter = 0; counter < 3; counter++) 
                       mov  dh,0                            ; {    
-                                                           ;     set_record(regime: counter, value: 1)
+                                                           ;     set_record(regime: counter, value: default_record)
                       mov  al,default_record               ; }
                       call set_record
                      
@@ -360,7 +384,8 @@ init_file_loop:       mov  dl,counter                      ; for (counter = 0; c
                                                   
                       mov  counter,0
 
-set_record_str_loop:  mov  dl,counter                     
+set_record_str_loop:  mov  bl,counter
+                      mov  bh,0                     
                       call set_record_str 
                                    
                       inc  counter
@@ -369,35 +394,40 @@ set_record_str_loop:  mov  dl,counter
                      
                       pop  bx
                      
-close_file:           mov  ah,3Eh                          ; close file
-                      int  21h  
+close_file:           mov  ah,3Eh                          
+                      int  21h                             ; Close file.
 
 end_of_reading:       ret
 set_records           endp
                
 
-;===================================
+;==========================================================
 ;
-; Procedure for set value of some record.
-; BX - file identifier 
-; DX - regime index (easy) - 0, (medium) - 1, (hard) - 2 
-; AL - new value
+; Procedure for set value of some record. File must be 
+; opened. 
 ;
-; File must be opened
- 
+; Entry: BX - file identifier 
+;        DX - regime index (easy = 0, medium = 1, hard = 2) 
+;        AL - new value
+; 
+; Returns: No return
+; Calls: No calls 
+; Changes: AX,BX,CX,DX
+; 
 set_record            proc
 
                       push ax
                        
                       mov  cx,0      
-                      shl  dx,2                            ; get index of needed regime
+                      shl  dx,2                            ; Get index of needed regime.
                        
                       push dx 
                               
-                      mov  al,0                            ; offset from beginning of file      
-                      mov  ah,42h
-                       
-                      int  21h                             ; move cursor to offset  
+                      mov  al,0                            ; Offset from beginning of file. 
+                           
+                      mov  ah,42h                          
+                      int  21h                             ; Move cursor to offset.
+                                                 
                       pop  dx
                       pop  ax                
                       jc   id_error 
@@ -405,47 +435,47 @@ set_record            proc
                       push bx
                       mov  bx,dx
                         
-                      mov  rec_buf[bx], al                 ; save new record
+                      mov  rec_buf[bx],al                  ; Save new record.
                        
                       mov  ah,04h
-                      int  1Ah                             ; get date
+                      int  1Ah                             ; Get date.
                 
                       sub  cx,2000h
                 
                       inc  bx
-                      mov  rec_buf[bx],dl                  ; day
+                      mov  rec_buf[bx],dl                  ; Day.
                                                 
                       inc  bx
-                      mov  rec_buf[bx],dh                  ; month
+                      mov  rec_buf[bx],dh                  ; Month.
                 
                       inc  bx
-                      mov  rec_buf[bx],cl                  ; year
-                       
-            
-                      sub  bx,3                            ; reset to start of regime record                          
+                      mov  rec_buf[bx],cl                  ; Year.
+                                  
+                      sub  bx,3                            ; Reset to start of regime record.                          
                                                     
-                      lea  dx,rec_buf[bx]                  ; bufer address
-                      mov  cx,4                            ; count of bytes to write
-                      pop  bx
-                      mov  ah,40h                                          
-                       
-                      int  21h                             ; write to file                         
-                      jc   id_error           
+                      lea  dx,rec_buf[bx]                  ; Bufer address.
+                      mov  cx,record_len                   ; Count of bytes to write.
+                      pop  bx              
+                      
+                      mov  ah,40h                                                                 
+                      int  21h                             ; Write to file.                                   
                                                      
 id_error:             ret    
 set_record            endp                
                
                
-;===================================
+;==========================================================
 ;
-; Procedure to read one record from buffer and
-; save records values in record strings
-; DL - regime index (easy) - 0, (medium) - 1, (hard) - 2
- 
+; Procedure to read one record from buffer and save records
+; values in record strings.
+;
+; Entry: BX - regime index (easy = 0, medium = 1, hard = 2) 
+; 
+; Returns: No return
+; Calls: set_score_str,set_date_str 
+; Changes: None
+;  
 set_record_str        proc  
-                 
-                      mov  bh,0                             
-                      mov  bl, dl 
                                           
                       call set_score_str
                       call set_date_str
@@ -454,30 +484,35 @@ set_record_str        proc
 set_record_str        endp
 
 
-;===================================
+;==========================================================
 ;
-; Procedure to set byte record value to string
-; BX - regime index
-
+; Procedure to set byte record value to string.
+;
+; Entry: BX - regime index 
+; 
+; Returns: No return
+; Calls: score_to_str 
+; Changes: AX,CH,DH,SI,easy_record_str
+;  
 set_score_str         proc                            
               
                       shl  bx,2
-                      mov  ch,rec_buf[bx]
+                      mov  ch,rec_buf[bx]                  ; Save value of regime with needed index to CH.
                       shr  bx,2
               
                       push bx
               
-                      mov  ax, bx                          ; set si to index of last digit of record value 
+                      mov  ax, bx                          ; Set si to index of last digit of record value. 
                                               
-                      mov  ah,rec_str_len                  ; ax = bx * rec_str_len + rec_value_offset 
-                      mul  ah                              ; si = ax + 2
+                      mov  ah,rec_str_len                  ; AX = BX * rec_str_len + rec_value_offset 
+                      mul  ah                              ; SI = AX + 2
                            
                       add  ax,rec_value_offset
             
                       mov  si,ax 
             
-                      mov  ah,0                            ; ah = 0
-                      mov  al,ch                           ; al = score_value
+                      mov  ah,0                            ; AH = 0
+                      mov  al,ch                           ; AL = score_value
                       
                       call score_to_str
                       
@@ -496,52 +531,62 @@ set_num:              mov  dh,score_str[bx]
 set_score_str         endp
 
                 
-;==========================
+;==========================================================
 ;
-; Procedure to convert integer score to string.
-; Save result in score_str
-; AX - score value                
-                
+; Procedure to convert integer score to string.  
+;                
+; Entry: AX - score value 
+; 
+; Returns: Saves result in score_str
+; Calls: No calls 
+; Changes: AX,BX,CL,score_str
+;                 
 score_to_str          proc
                 
                       mov  bx,2
-                      mov  cl,10                           ; for (bx = 2 ; bx > 0; bx--) 
+                      mov  cl,10                           ; for (BX = 2 ; BX > 0; BX--) 
                                                            ; {     
-scan_num:             div  cl                              ;     (ah, al) = (ax % 10, ax / 10)                 
-                                                           ;     ah += 48
-                      add  ah,48                           ;     score_str[bx] = ah                    
-                      mov  score_str[bx],ah                ;     ah = 0                       
+scan_num:             div  cl                              ;     (AH, AL) = (AX % 10, AX / 10)                 
+                                                           ;     AH = AH.to_string()
+                      add  ah,'0'                          ;     score_str[BX] = AH                    
+                      mov  score_str[bx],ah                ;     AH = 0                       
                                                            ; }                              
                       mov  ah,0                                                              
-                                                           ; Set ah to 0 to divide previos 
+                                                           ; Set AH to 0 to divide previos 
                       dec  bx                              ; quotient in the next iteration.
            
                       cmp  bx,0
                       jg   scan_num   
                                         
-                      add  al,48                           ; al += 48
+                      add  al,48                           ; AL = AL.to_string()
                       mov  score_str[bx],al
                                         
                       ret
 score_to_str          endp     
-
-;===================================
+ 
+ 
+;==========================================================
 ;
-; Procedure to set byte record value to string 
-; BX - regime index
-
+; Procedure to set byte record value to string. 
+;            
+; Entry: BX - regime index 
+; 
+; Returns: No return
+; Calls: get_date_part 
+; Changes: AX,DX,easy_record_str
+;  
 set_date_str          proc  
               
-                      mov  ax,bx                           ; set si to index of record str 
+                      mov  ax,bx                            
                                               
-                      mov  ah,rec_str_len                  ; ax = bx * rec_str_len  
-                      mul  ah                              ; si = ax
+                      mov  ah,rec_str_len                    
+                      mul  ah                              ; AX = BX * rec_str_len
     
-                      mov  si,ax
+                      mov  si,ax                           ; Set SI to index of needed regime record string.
                       
                       mov  dx,bx
                       shl  dx,2
-                      inc  dx 
+                      inc  dx                              ; Set DX to index of day in date 
                       
                       push bx
                       lea  bx,easy_record_str
@@ -565,15 +610,19 @@ set_date_str          proc
 set_date_str          endp     
  
 
-;===================================
+;==========================================================
 ;
-; Procedure to get date part as byte from BCD format
-; dx - index in record buffer where date part start
-; Save result in ax
-
+; Procedure to get date part as byte from BCD format.
+;       
+; Entry: DX - index in record buffer where date part start 
+; 
+; Returns: Saves first digit in AH, last in AL
+; Calls: No calls
+; Changes: AX,CX
+;  
 get_date_part         proc       
     
-                      mov  cx,si                           ; save value of si
+                      mov  cx,si                           ; Save value of si.
                       mov  si,dx
             
                       mov  ax,0
@@ -582,8 +631,8 @@ get_date_part         proc
                       shl  ax,4
                       shr  al,4
             
-                      add  ah,48
-                      add  al,48
+                      add  ah,'0'                          ; AH = AH.to_string()
+                      add  al,'0'                          ; AL = AL.to_string()
                       
                       mov  si,cx
                       
@@ -591,41 +640,53 @@ get_date_part         proc
 get_date_part         endp    
  
 
-;===================================
+;==========================================================
 ;
-; Since pages use the first bit to indicate initialization, 
-; to get the page number needed to set the first bit to 0.
-; The only argument is the page. 
-; The result is placed in BH. 
-
+; Macro to get page number. 
+;
+; Entry: page - byte with last 7 bits is page number 
+; 
+; Returns: Saves result in BH
+; Calls: No calls
+; Changes: BH
+; 
 get_page_num          macro page
-    
-                      mov  bh,page 
-                      and  bh,01111111b               
-endm
+                                                           ; Since pages use the first bit to indicate 
+                      mov  bh,page                         ; initialization, to get the page number needed 
+                      and  bh,01111111b                    ; to set the first bit to 0. 
+endm                                                        
   
                    
-;===================================
+;==========================================================
 ;
 ; Macro to go to another page.
-; The only argument is the page. 
-
-mov_to_page           macro page
-   
-                      mov  ah,5  
-            
+;
+; Entry: page - byte with last 7 bits is page number 
+; 
+; Returns: No return
+; Calls: get_page_num
+; Changes: AX
+; 
+go_to_page            macro page
+               
                       get_page_num page 
                       mov  al,bh                
-            
+                      
+                      mov  ah,5
                       int  10h    
 endm  
  
                                            
-;===================================
+;==========================================================
 ;
 ; Macro for marking pages as initialized.
-; The only argument is the page. 
-    
+;
+; Entry: page - byte with last 7 bits is page number 
+; 
+; Returns: No return
+; Calls: get_page_num
+; Changes: BX,DL
+;   
 set_inited            macro page 
                       local already_inited     
     
@@ -633,58 +694,66 @@ set_inited            macro page
                       jae  already_inited
                 
                       get_page_num page
-                      mov  bl, bh
+                      mov  bl, bh                          ; Save page number as offset from menu_page.
                       mov  bh,0
           
                       mov  dl,menu_page[bx]                ; Since pages are allocated in memory one after another and 
                       or   dl,10000000b                    ; similarly marked with numbers,can be used the address of the
-                                                           ; first page and the page itself as an offset to obtain the address
-                      mov menu_page[bx],dl
-                  
+                                                           ; first page and the page itself as an offset to obtain the address.
+                      mov menu_page[bx],dl                  
 already_inited:        
 endm
 
 
-;===================================
+;==========================================================
 ;
 ; Macro to check if the page is initialized.
-; The only argument is the page.
-; The result is stored in the CF bit
-
+;
+; Entry: page - byte with last 7 bits is page number 
+; 
+; Returns: If inited, sets CF, atherwice resets it.
+; Calls: No calls
+; Changes: AH
+;
 is_inited             macro page
     
                       mov  ah,page                         ; An overflow will occur here if the page is greater 
                       add  ah,10000000b                    ; than 01111111b, which is a sign of an initialized page.     
-endm                                                       ; This will set or reset the CF flag.
+endm                                                       ; This will set or reset the CF.
         
 
-;===================================
+;==========================================================
 ;
 ; Procedure for displaying big words. 
-; ES:BP - big word adress.The first two bytes must be length and width, then comes the actual string.
-; BH - page num 
-; BL - attribute
-; DH,DL - row and column
-    
+;          
+; Entry: ES:BP - big word adress
+;        BH - page num 
+;        BL - attribute
+;        DH,DL - row and column
+; 
+; Returns: No return
+; Calls: No calls
+; Changes: AX,CX,BP,counter
+;    
 print_big_word        proc 
     
-                      mov  al,0                            ; one attribute for all symbols
+                      mov  al,0                            ; One attribute for all symbols.
             
-                      mov  cl,[bp]                         ; get lenght of big word
-                                                           ; get height og big word
+                      mov  cl,[bp]                         ; Get lenght of big word.
+                                                           ; Get height of big word.
                       mov  ch,[bp+1] 
-                      mov  counter, ch                     ; save to counter and set to zero to
+                      mov  counter, ch                     ; Save to counter and set to zero.
                       mov  ch,0                            ; CX = CL
             
-                      add  bp,2                            ; set bp to start of big word
+                      add  bp,2                            ; Set bp to start of big word.
                
                       mov  ah,13h
     
-str_loop:             int  10h                             ; print one line of big word
+str_loop:             int  10h                             ; Print one line of big word.
     
                       dec  counter                  
                        
-                      inc  dh                              ; move to next line
+                      inc  dh                              ; Move to next line.
                       add  bp,cx
             
                       cmp  counter,0
@@ -694,17 +763,21 @@ str_loop:             int  10h                             ; print one line of b
 print_big_word        endp    
 
 
-;===================================
+;==========================================================
 ;
 ; Procedure for displaying choices. There are always three 
-; options and they are located in the same places.
-; ES:AX - first choice
-; ES:CX - second choice
-; ES:DX - third choice
-; BH - page number
+; options and they are located in the same places.Choices 
+; must be strings ended with $.    
+;
+; Entry: ES:AX - first choice address
+;        ES:CX - second choice address
+;        ES:DX - third choice address
+;        BH - page number
 ; 
-; Choices must be strings ended with $
-
+; Returns: No return
+; Calls: No calls
+; Changes: AX,CX,DX,counter
+;    
 print_choices         proc          
     
                       push dx
@@ -713,19 +786,19 @@ print_choices         proc
     
                       mov  counter,0 
     
-                      mov  ch,17                           ; Store row.
+                      mov  ch,first_choice_row             ; Store row.
         
 print_choices_loop:   mov  dh,ch
-                      mov  dl,26
+                      mov  dl,first_choice_col+2
     
                       mov  ah,02h                          ; Move cursor.
                       int  10h
     
-                      pop  dx                              ; Pop from stack choice string address
-                      mov  ah,09h                          ; Print choice string
+                      pop  dx                              ; Pop from stack choice string address.
+                      mov  ah,09h                          ; Print choice string.
                       int  21h
     
-                      add  ch,2                            ; Go down two rows
+                      add  ch,2                            ; Go down two rows.
     
                       inc  counter
                       cmp  counter,3
@@ -735,48 +808,51 @@ print_choices_loop:   mov  dh,ch
 print_choices         endp 
 
 
-;===================================
+;==========================================================
 ;
-; Procedure for choosing from three options. Responsible for 
-; switching between options. The choice variable is responsible 
-; for the number of the selected action. Stores the result 
-; of the selection in the choice variable. 
-; BH - page num 
-
-    
+; Procedure for choosing from three options. Responsible 
+; for switching between options. The choice variable is 
+; responsible for the number of the selected action.  
+;
+; Entry: BH - page number
+;        choice - initial choice
+; 
+; Returns: Save selection in the choice variable
+; Calls: No calls
+; Changes: AX,BL,CX,DX,BP,choice
+; 
 make_choice           proc
             
                       mov  al,choice
         
-                      dec  al                              ; get offset in the lines relative to the first option. 
+                      dec  al                              ; Get offset in the lines relative to the first option. 
                       shl  al,1                            ; There is one empty line between the lines with options.
             
-                      mov  dh,17                           ; Row with first choice
+                      mov  dh,first_choice_row             ; Row with first choice.
                       add  dh,al
-                      mov  dl,24
-            
+                      mov  dl,first_choice_col
+                              
+                      lea  bp,choice_ptr                     
+                      mov  al,0                            ; Attribute in bl
                       mov  bl,light_gray
-                      mov  cx,1
-            
-           
-                      lea  bp,choice_ptr
-                      mov  ah,13h
-                      mov  al,0
-                                                           ; print choice ptr in neaded position
-                      int  10h
-                
-                
-                      mov  ah,1                            ; priachem kursor
+                      mov  cx,1                            ; Print one symbol
+                      
+                      mov  ah,13h                                     
+                      int  10h                             ; Print choice ptr in neaded position.
+                                                               
                       mov  ch,20h
-                
-                      int  10h
+                      mov  ah,1 
+                      int  10h                             ; Hide cursor.
 
-choice_waiting:       mov  ah,0                            ; prerivanie vvoda simvola s ojidaniem
-                      int  16h                             ; result saved in ax
-         
-                      cmp  al,'w'
+choice_waiting:       mov  ah,0                            ; Wait symbol in keyboard buffer.
+                      int  16h                             ; Result saved in ax.
+                      
+                      mov  cx,ax
+                      or   al,to_lower_mask                ; al = al.to_lower()
+                                                           ; This trick allows to avoid 
+                      cmp  al,'w'                          ; comparison with UPPER CASE letters.
                       je   to_upper_choice
-        
+                       
                       cmp  ah,top_arrow_key
                       je   to_upper_choice
         
@@ -787,7 +863,7 @@ choice_waiting:       mov  ah,0                            ; prerivanie vvoda si
                       cmp  ah,bottom_arrow_key
                       je   to_lower_choice
         
-        
+                      mov  ax,cx
                       jmp  other_choice
     
 to_upper_choice:      add  choice,4                        ; upper_choice = (choice + 4) % 3 + 1
@@ -801,14 +877,14 @@ to_lower_choice:      mov  ah,0
                       inc  ah
                       mov  choice,ah  
            
-                      mov  cx,1                            ; clear choice ptr on previos choice on screen
+                      mov  cx,1                            ; Clear choice ptr on previos choice on screen.
                       lea  bp,choice_clear                 
                       mov  al,0
                      
                       mov  ah,13h
                       int  10h
                   
-                      jmp  make_choice                     ; redisplay choice pointer
+                      jmp  make_choice                     ; Redisplay choice pointer.
 
 other_choice:         cmp  ax,enter_key                    
                       je   choice_is_made
@@ -818,12 +894,12 @@ other_choice:         cmp  ax,enter_key
         
                       mov  choice,escape_chc
 
-choice_is_made:       mov  dh,choice                       ; clear current choice
+choice_is_made:       mov  dh,choice                       ; Clear current choice.
             
-                      dec  dh                              ; get offset in the lines relative to the first option. 
-                      shl  dh,1                            ; There is one empty line between the lines with options.
+                      dec  dh                               
+                      shl  dh,1                           
                         
-                      add  dh,17                           ; Row with first choice
+                      add  dh,17                          
                       mov  dl,24
             
                       mov  bl,black
@@ -833,51 +909,64 @@ choice_is_made:       mov  dh,choice                       ; clear current choic
                       mov  ah,13h
                       mov  al,0
                      
-                      int  10h                             ; print choice_clear on top of the pointer
+                      int  10h                             ; Print choice_clear on top of the pointer.
     
                       ret        
 make_choice           endp  
 
 
-;======================
+;==========================================================
 ;
-; Procedure for waiting for user input. Space, enter 
-; and escape keys are recognized. Space equal to enter. 
-; Proceduse save result in choice variable  
-
+; Procedure for waiting user input. Space, enter and escape 
+; keys are recognized. Space equal to enter. 
+;
+; Entry: No args
+; Returns: Save result in the choice variable  
+; Calls: No calls
+; Changes: AX,choice
+; 
 wait_command          proc
     
-                      mov  ah,0                            ; prerivanie vvoda simvola s ojidaniem
+                      mov  ah,0                            ; Wait symbol
                       int  16h
             
                       cmp  ax,escape_key
                       je   escape
                       
                       cmp  ax,enter_key 
-                      je   back_to_menu
+                      je   back
                       
                       cmp  ah,space_key
-                      je   back_to_menu
+                      je   back
                       
                       jmp  wait_command
             
 escape:               mov  choice,escape_chc
                       jmp  command_made
 
-back_to_menu:         mov  choice,menu_chc                 
+back:                 mov  choice,1                 
         
 command_made:         ret
 wait_command          endp    
 
 
-;===================================
+;==========================================================
 ;
 ; Procedure that controls the logic of a menu page. 
-; Saves the selection results to the choice variable.
-
+;
+; Entry: No args
+; Returns: Save selection in the choice variable
+;  
+; Calls: go_to_page,
+;        print_menu_page,
+;        get_page_num,
+;        make_choice 
+;
+; Changes: choice
+; 
 load_menu_page        proc
     
-                      mov_to_page menu_page  
+                      go_to_page menu_page  
              
                       call print_menu_page
             
@@ -890,11 +979,21 @@ load_menu_page        proc
 load_menu_page        endp
  
  
-;===================================
+;==========================================================
 ;
-; Pocedure for displaying a menu page. Writes 
-; to video memory once, then overwriting will not occur.
-
+; Pocedure for displaying a menu page. Writes to video 
+; memory once, then overwriting will not occur.
+;
+; Entry: No args
+; Returns: Save selection in the choice variable
+;  
+; Calls: is_inited,
+;        get_page_num,
+;        print_big_word,
+;        print_choices
+;
+; Changes: AX,CX,Bl,DX,BP
+; 
 print_menu_page       proc
     
                       is_inited menu_page
@@ -920,7 +1019,7 @@ print_menu_page       proc
                 
                 
                       lea  ax,play_str
-                      lea  cx,score_list_str
+                      lea  cx,records_str
                       lea  dx,exit_str
                 
                       call print_choices
@@ -931,35 +1030,51 @@ menu_page_inited:     ret
 print_menu_page       endp  
 
 
-;===================================
+;==========================================================
 ;
-; Procedure that controls the logic of a score list page. 
-; Save back_chc in choice variable if user choice back to menu
-; and save escape_chc if user press escape
-
-
-load_score_list_page  proc
+; Procedure that controls the logic of a records page. 
+;
+; Entry: No args
+; Returns: Save selection in the choice variable
+;  
+; Calls: go_to_page,
+;        print_records_page,
+;        wait_command
+;
+; Changes: None
+; 
+load_records_page     proc
                       
-                      mov_to_page score_list_page 
+                      go_to_page records_page 
                       
-                      call print_scr_list_page 
+                      call print_records_page 
                       call wait_command  
                       
                       ret
-load_score_list_page  endp
+load_records_page     endp
 
 
-;===================================
+;==========================================================
 ;
-; Pocedure for displaying a score list page. Writes 
-; to video memory once, then overwriting will not occur.
-   
-print_scr_list_page   proc
+; Pocedure for displaying a records page. Writes to video
+; memory once, then overwriting will not occur.
+;
+; Entry: No args
+; Returns: No return
+;  
+; Calls: is_inited,
+;        get_page_num,
+;        print_big_word,
+;        set_inited,
+;
+; Changes: AX,BL,CX,DX,BP
+;    
+print_records_page    proc
       
-                      is_inited score_list_page
-                      jc  scr_lst_page_inited   
+                      is_inited records_page
+                      jc  records_page_inited   
                                                         
-                      get_page_num score_list_page
+                      get_page_num records_page
     
                       lea  bp,score_big_word   
        
@@ -974,20 +1089,20 @@ print_scr_list_page   proc
                       mov  bl,light_gray
                       call print_big_word
                             
-                      set_inited score_list_page
+                      set_inited records_page
                             
-scr_lst_page_inited:  get_page_num score_list_page
-                            
-                      mov  cx,rec_str_len
-                      mov  ah,13h
-                      mov  al,0                            ; one color for string
-                      mov  dl,6                            ; offset from begining                                      
-                                                    
+records_page_inited:  get_page_num records_page
+                      
                       lea  bp,easy_record_str
-                      mov  bl,lime
-                      mov  dh,17                           ; row
                             
-                      int  10h                             ; print string
+                      mov  cx,rec_str_len                  
+                      mov  al,0                            ; One color for string.                                                                                                       
+                      mov  bl,lime
+                      mov  dh,17                           ; Row.
+                      mov  dl,6                            ; Column.                           
+                      
+                      mov  ah,13h      
+                      int  10h                             ; Print string.
                         
                       lea  bp,medium_record_str
                       mov  bl,yellow                   
@@ -1002,17 +1117,26 @@ scr_lst_page_inited:  get_page_num score_list_page
                       int  10h
                    
                       ret                         
-print_scr_list_page   endp 
+print_records_page    endp 
 
 
-;===================================
+;==========================================================
 ;
 ; Procedure that controls the logic of a regime page. 
-; Saves the selection results to the choice variable
-
+;
+; Entry: No args
+; Returns: Save selection in the choice variable
+;  
+; Calls: go_to_page,
+;        print_regime_page,
+;        get_page_num,
+;        make_choice
+;
+; Changes: choice
+; 
 load_regime_page      proc
                  
-                      mov_to_page regime_page
+                      go_to_page regime_page
                  
                       call print_regime_page  
                  
@@ -1025,11 +1149,22 @@ load_regime_page      proc
 load_regime_page      endp
 
 
-;===================================
+;==========================================================
 ;
-; Pocedure for displaying a regime page. Writes 
-; to video memory once, then overwriting will not occur.
-
+; Pocedure for displaying a regime page. Writes to video 
+; memory once, then overwriting will not occur.
+;
+; Entry: No args
+; Returns: No return
+;  
+; Calls: is_inited,
+;        get_page_num,
+;        print_big_word,
+;        print_choices,
+;        set_inited
+;
+; Changes: AX,BL,CX,DX,BP
+;    
 print_regime_page     proc
     
                       is_inited regime_page
@@ -1039,8 +1174,8 @@ print_regime_page     proc
     
                       lea  bp,regime_big_word   
                                                              
-                      mov  dh,4                            ; Row
-                      mov  dl,2                            ; Column                                
+                      mov  dh,4                            ; Row.
+                      mov  dl,2                            ; Column.                                
                       mov  bl,light_red                                               
                        
                       call print_big_word 
@@ -1057,12 +1192,16 @@ regime_page_inited:   ret
 print_regime_page     endp  
 
 
-
-;===================================
+;==========================================================
 ;
 ; Procedure for setting delay based on difficulty level.
-; AL-difficulty level (1-easy,2-medium,3-hard) 
- 
+;
+; Entry: AL - difficulty level (1-easy,2-medium,3-hard) 
+;
+; Returns: No return 
+; Calls: No calls
+; Changes: CX
+;  
 set_delay             proc
           
                       mov  cx,5
@@ -1074,17 +1213,32 @@ set_delay             proc
 set_delay             endp     
  
  
-;===================================
+;==========================================================
 ;
 ; Procedure that controls the logic of a regime page. 
-; Saves the selection results to the choice variable.
-
+;
+; Entry: AL - difficulty level (1-easy,2-medium,3-hard) 
+;
+; Returns: Save selection in the choice variable
+;
+; Calls: set_start_game_state,
+;        print_game_page,
+;        go_to_page,
+;        process_game_key,
+;        move_tail,
+;        update_apple,
+;        move_head,
+;        stoping,
+;        update_record
+;
+; Changes: choice
+; 
 load_game_page        proc
                                
                       call set_start_game_state             
                       call print_game_page
                        
-                      mov_to_page game_page                ; first clear field, then move to page
+                      go_to_page game_page                ; First clear field, then move to page.
 
 game_loop:            call process_game_key
                       jc   escape_from_game
@@ -1116,10 +1270,18 @@ end_game:             call update_record
 load_game_page        endp     
 
 
-;=================================
+;==========================================================
 ;
-; Pocedure for displaying a game page 
-
+; Pocedure for displaying a game page. 
+;
+; Entry: No args
+; Returns: No return
+;  
+; Calls: get_page_num,
+;        set_elem
+;
+; Changes: AX,BL,CX,DX,BP
+;  
 print_game_page       proc 
                     
                       get_page_num game_page                                                                 
@@ -1132,61 +1294,58 @@ print_game_page       proc
               
 print_field_loop:     mov  dl,12
                       mov  ah,02h
-                      int  10h                             ; move cursor
-    
-                      mov  ah,09h
+                      int  10h                             ; Move cursor.
+                         
                       mov  al,grass_elem[0]
                       mov  bl,grass_elem[1]
-         
-                      int  10h                             ; set range of grass elems to graphic memory
+                      
+                      mov  ah,09h
+                      int  10h                             ; Set range of grass elems to graphic memory.
         
                       inc  dh
                       cmp  dh,20
                       jl   print_field_loop
                        
-                      mov   cl,1
-                      mov   bx,16
-                      call  set_elem
+                      lea  bp,snake_elem
+                      mov  bx,16
+                      call set_elem
                          
-                      mov   bx,17
-                      call  set_elem
+                      mov  bx,17
+                      call set_elem
                          
-                      mov   bx,18
-                      call  set_elem
+                      mov  bx,18
+                      call set_elem
                          
-                      mov   cl,3
-                      mov   bx,19
-                      call  set_elem
+                      lea  bp,head_elem_right
+                      mov  bx,19
+                      call set_elem
                          
-                      mov   cl,7
-                      mov   bx,23
-                      call  set_elem
+                      lea  bp,apple_elem
+                      mov  bx,23
+                      call set_elem
                             
                       get_page_num game_page
                        
-                      lea  bp,score_mes                    ; dlia prerivania  
-                       
-                      mov  dh,21                           ; row
-                      mov  dl,15                           ; column
+                      lea  bp,score_mes                                         
+                      mov  dh,21                           ; Row.
+                      mov  dl,15                           ; Column.
                           
                       mov  ch,0
-                      mov  cl,score_mes_len                ; dlina stroki SCORE
+                      mov  cl,score_mes_len               
                                                 
                       mov  bl,light_gray                                                
-                      mov  al,1                            ; bez atributov
+                      mov  al,1                            ; One attribute.
       
-                      mov  ah,13h
-    
-                      int  10h
+                      mov  ah,13h   
+                      int  10h                             ; Print score.
         
                       ret  
 print_game_page       endp 
 
 
-;===================================
+;==========================================================
 ;
-; Set settings to the start state: 
-;
+; Set settings to the start state. 
 ; Field becomes like this:
 ;      
 ;     012345678....15
@@ -1200,27 +1359,35 @@ print_game_page       endp
 ;
 ; Field size is 16x16  
 ; Score is set to 0
-         
+;
+; Entry: No args
+; Returns: No return
+; Calls: No calls
+;
+; Changes: AL,CX,DI,field,tail,
+;          head,apple,rotation,
+;          score,score_str
+;           
 set_start_game_state  proc 
     
                       mov  al,empty_cell
                       mov  cx,size*size
                       lea  di,field
-                      rep  stosb                           ;    memset(field, empty, size * size)
+                      rep  stosb                           ;    memset(field, empty_cell, size * size)
                                                             
-                      mov  field[16],'2'                   ;    field[1][0..4] = snake
-                      mov  field[17],'2'             
-                      mov  field[18],'2'         
-                      mov  field[19],'2'        
+                      mov  field[16],right_cell            ;    field[1][0..4] = snake
+                      mov  field[17],right_cell             
+                      mov  field[18],right_cell         
+                      mov  field[19],right_cell        
                                                 
                       mov  tail,16                         ;    tail = [1][0]
                       mov  head,19                         ;    head = [1][3] 
-                                                                                     
-                      mov  rotation,'2'                    ;    rotation = right   
-                                                                                                
-                      mov  field[23],'A'                   ;    field[1][7] = apple
+                                                                                                                                                                                
+                      mov  field[23],apple_cell            ;    field[1][7] = apple
                                                 
                       mov  apple,23                        ;    apple = [1][7]
+                      
+                      mov  rotation,right_cell             
                           
                       mov  score,0
                 
@@ -1231,24 +1398,34 @@ set_start_game_state  proc
                       ret
 set_start_game_state  endp 
 
-;=================================
+
+;==========================================================
 ;
-; Pocedure for changing rotation of snake.
-; Can only turn left or right relative to the 
-; current position. Read key from keyboard 
-; buffer, if can.
-
-
+; Procedure for process key press in game. Can set pause, 
+; escape, only turn left or right relative to the current 
+; position. Read key from keyboard buffer, if can.
+;
+; Entry: No args
+; Returns: No return
+; Calls: stopping
+;
+; Changes: AL,CX,rotation
+;   
 process_game_key      proc
 
                       mov  ah,1              
-                      int  16h                             ; check if there is a key in the keyboard buffer
+                      int  16h                             ; Check if there is a key in the keyboard buffer.
          
-                      jz   process_end                     ; if no key, return
+                      jz   process_end                     ; If no key, return.
         
-                      mov  ah,0                            ; if buffer contains key, save it to ax
-                      int  16h
-           
+                      mov  ah,0                            
+                      int  16h                             ; If buffer contains key, save it to ax.
+                      
+                      cmp  ax,escape_key
+                      je   process_escape
+                      
+                      or   al,to_lower_mask
+                      
                       cmp  al,'w'
                       je   rotate_top
         
@@ -1280,38 +1457,34 @@ process_game_key      proc
                       cmp  ah,space_key
                       je   process_pause
                
-                                   
-                      cmp  ax,escape_key
-                      je   process_escape
-              
-                    
+                  
                       jmp  process_end
 
-rotate_top:           cmp  rotation,'3'
+rotate_top:           cmp  rotation,bottom_cell
                       je   process_end
         
-                      mov  rotation,'1'
+                      mov  rotation,top_cell
                       jmp  process_end
                   
               
-rotate_right:         cmp  rotation,'4'
+rotate_right:         cmp  rotation,left_cell
                       je   process_end
         
-                      mov  rotation,'2'
+                      mov  rotation,right_cell
                       jmp  process_end      
                  
              
-rotate_bottom:        cmp  rotation,'1'
+rotate_bottom:        cmp  rotation,top_cell
                       je   process_end
         
-                      mov  rotation,'3'
+                      mov  rotation,bottom_cell
                       jmp  process_end 
            
                  
-rotate_left:          cmp  rotation,'2'
+rotate_left:          cmp  rotation,right_cell
                       je   process_end
         
-                      mov  rotation,'4'
+                      mov  rotation,left_cell
                       jmp  process_end                            
        
        
@@ -1323,37 +1496,41 @@ process_pause:        call load_pause
         
                       jmp  process_game_key
 
-process_escape:       stc                                  ; set carry flag
+process_escape:       stc                                  ; Set carry flag.
                       ret
     
-process_end:          clc                                  ; clear carry flag
+process_end:          clc                                  ; Clear carry flag.
                       ret
 process_game_key      endp
  
  
-;=====================
+;==========================================================
 ;
-; Procedure for processing pause. Wait
-; untill player press space again or leave
-; from game by escape. Set CF if escape,
-; othervice reset it.
-
+; Procedure for processing pause. Wait untill player press 
+; space again or leave from game by escape. 
+;
+; Entry: No args
+; Returns: Set CF if escape, othervice reset it
+; Calls: set_pause
+;
+; Changes: AX,BP
+;   
 load_pause            proc
      
                       lea  bp,pause_big_word   
                       call set_pause
 
-entering_pause:       mov  ah,0                            ; prerivanie vvoda simvola s ojidaniem
+entering_pause:       mov  ah,0                           
                       int  16h 
         
                       cmp  ax,escape_key
-                      je   pause_escape
+                      je   pause_escape                    ; If escape, set cf and return.
         
-                      cmp  ah,space_key                    ; esli ne probel, to vvodim dalshe
+                      cmp  ah,space_key                    ; If not space, wait again.
                       jne  entering_pause     
          
                       lea  bp,pause_clear   
-                      call set_pause                       ; clear carry flag
+                      call set_pause                       ; Clear carry flag.
                       clc 
                       ret
     
@@ -1363,21 +1540,25 @@ pause_escape:         stc
 load_pause            endp  
  
  
- 
-;==================
+;==========================================================
 ;  
 ; Procedure to print or clear pause.
-; BP - address of pause_big_word or pause_clr
-
+; 
+; Entry: BP - address of pause_big_word or pause_clr
+;
+; Returns: No return
+; Calls: print_big_word
+; Changes: AL,BL,DX
+;  
 set_pause             proc
     
-                      mov  al,1                            ; bez atributov
+                      mov  al,1                            ; One attribute.
             
                       get_page_num game_page     
                       mov  bl,light_gray                  
             
-                      mov  dh,2                            ; mesto vivoda
-                      mov  dl,2                                
+                      mov  dh,2                            ; Row
+                      mov  dl,2                            ; Column    
                                                                            
                       call print_big_word
                
@@ -1385,16 +1566,24 @@ set_pause             proc
 set_pause             endp    
   
 
-;==================
+;==========================================================
 ;
-; Procedure for move tail. If apple is eaten, tail
-; don't move. If all field filled by snake, set CF.
-; If not, reset CF.
-
+; Procedure for move tail. If apple is eaten, tail don't 
+; move. 
+; 
+; Entry: No args
+; Returns: If win, set CF, otherwice reset CF
+;
+; Calls: move, 
+;        set_elem,
+;        score_to_str  
+;
+; Changes: AX,BX,DH,BP
+;  
 move_tail             proc
         
                       mov  bx,apple                        ; If on 'apple' index not apple, it means 
-                      cmp  field[bx],'A'                   ; it was eaten in the previous iteration.
+                      cmp  field[bx],apple_cell            ; it was eaten in the previous iteration.
                       jne  inc_score                       ; Not move tail with moving head.        
                              
                       mov  bx,tail 
@@ -1406,26 +1595,25 @@ move_tail             proc
                       mov  bx,ax   
              
                       mov  dh,empty_cell 
-                      mov  field[bx],dh                    ; clear old tail on field
+                      mov  field[bx],dh                    ; Clear old tail on field.
         
-                      mov  cx,0                            ; grass elem index
-                      call set_elem                        ; clear old tail on page
+                      lea  bp,grass_elem                  
+                      call set_elem                        ; Clear old tail on page.
         
                       jmp  tail_move_end
 
 inc_score:            inc  score
-    
+                      
+                      mov  ax,score 
+                      call score_to_str
+                      
                       cmp  score,max_score
                       jne  not_won
-        
-                      mov  choice,1
+                      
                       stc
                       ret
      
-not_won:              mov  ax,score 
-                      call score_to_str
-                     
-                      lea  bp,score_str      
+not_won:              lea  bp,score_str      
                      
                       mov  bl,light_gray   
         
@@ -1433,12 +1621,12 @@ not_won:              mov  ax,score
         
                       mov  cx,score_str_len                  
         
-                      mov  dh,21                           ; Row
-                      mov  dl,22                           ; Column
+                      mov  dh,21                           ; Row.
+                      mov  dl,22                           ; Column.
            
-                      mov  al,1                            ; no attributes
+                      mov  al,1                            ; One attributes.
          
-                      mov  ah,13h                          ; print new score
+                      mov  ah,13h                          ; Print new score.
                       int  10h 
      
 tail_move_end:        clc 
@@ -1446,13 +1634,19 @@ tail_move_end:        clc
 move_tail             endp  
 
 
-;====================
+;==========================================================
 ;
-; Procedure for set cell on game page by
-; field index.
-; BX - field index
-; CX - element index
-
+; Procedure for set cell on game page by field index.
+;
+; Entry: BX - field index
+;        BP - element address 
+;
+; Returns: No return
+;
+; Calls: get_page_num  
+;
+; Changes: AX,CX,DX
+;  
 set_elem              proc
         
                       push bx    
@@ -1463,84 +1657,84 @@ set_elem              proc
                       shr  dh,4                            ; row = field_index / field_size   
                       and  dl,00001111b                    ; col = field_index % field_size
                 
-                      add  dh,4                            ; row_num += 4              field offset from left top corner
+                      add  dh,4                            ; row_num += 4              
                       add  dl,12                           ; col_num += 12  
-                
-                      shl  cl,1                            ; shift to get word index
-                     
-                      push si
-                     
-                      mov  si,cx    
-                      lea  bp,grass_elem[si]
-                     
-                      pop  si
                 
                       get_page_num game_page        
                
-                      mov  cx,1                            ; print one symbol
+                      mov  cx,1                            ; Print one symbol.
                 
-                      mov  al,255                          ; string with attributes
+                      mov  al,255                          ; String with attributes.
                 
                       mov  ah,13h    
-                      int  10h                             ; print needed symbol
+                      int  10h                             ; Print needed symbol.
                         
-                      pop  bx   
-                    
+                      pop  bx                       
                       ret    
 set_elem              endp
 
 
-;=====================
+;==========================================================
 ;
 ; Procedure to set new apple.
-
+;
+; Entry: No args
+; Returns: No return
+; Calls: set_elem 
+; Changes: AX,BX,CX,DX,BP
+;  
 update_apple          proc
     
                       mov  bx,apple
             
-                      cmp  field[bx],'A'
+                      cmp  field[bx],apple_cell
                       jne  try_set_apple
             
                       ret
     
-try_set_apple:        mov  ah,2Ch                          ; get current time
-                      int  21h                             ; dh - seconds, dl - centiseconds 
+try_set_apple:        mov  ah,2Ch                          ; Get current time.
+                      int  21h                             ; dh - seconds, dl - centiseconds. 
                     
-                      mov  al,60                           ; Since the smaller the unit of measurement, the more unpredictable 
-                      mul  dl                              ; the value will be, seconds and centiseconds are best suited 
-                      mov  dl,dh                           ; for obtaining a random number. 
+                      mov  al,60                           ; Since the smaller the unit of measurement, the more  
+                      mul  dl                              ; unpredictable value will be, seconds and centiseconds 
+                      mov  dl,dh                           ; are best suited for obtaining a random number. 
                       mov  dh,0                 
                       add  ax,dx                           ; ax = cs * 60 + s
                       mov  dx,0
-                                                           ; Now AX value will be a random number from [0,5999]
+                                                           ; Now AX value will be a random number from [0,5999].
                       mov  cx,23                           ; Divide this value by 23 and get an almost 
-                      div  cx                              ; uniform distribution of the index
+                      div  cx                              ; uniform distribution of the index.
                     
-                      mov  bh,0                            ; al - random value from [0,255]
+                      mov  bh,0                            ; al - random value from [0,255].
                       mov  bl,al
         
-                      cmp  field[bx],empty_cell            ; if new index is not empty index, try again
+                      cmp  field[bx],empty_cell            ; If new index is not empty index, try again.
                       jne  try_set_apple    
            
-                      mov  field[bx],'A'
+                      mov  field[bx],apple_cell
                       mov  apple,bx    
         
-                      mov  cx,7                            ;;; 7 - cod elementa apla
+                      lea  bp,apple_elem                   
                       call set_elem
             
                       ret    
 update_apple          endp 
 
 
-;==================
+;==========================================================
 ;
-; Procedure for
-
+; Procedure for move head.
+;
+; Entry: No args
+; Returns: No return
+; Calls: set_elem 
+; Changes: AX,BX,CX,BP,blink_counter
+;  
 move_head             proc
     
                       mov  bx,head
             
-                      mov  cx,1                            ;;; snake body
+                      lea  bp,snake_elem                   
                       call set_elem
             
                       call move
@@ -1549,7 +1743,7 @@ move_head             proc
                       cmp  field[bx],empty_cell
                       je   not_lose
             
-                      cmp  field[bx],'A'
+                      cmp  field[bx],apple_cell
                       je   not_lose
             
                       stc
@@ -1559,15 +1753,19 @@ not_lose:             mov  cl,rotation
                       mov  field[bx],cl
                    
                       inc  blink_counter 
-                      and  blink_counter,00000111b         ; every 8 frames blink
+                      and  blink_counter,00000111b         ; Every 8 frames snake will blink.
                       cmp  blink_counter,00000111b
                       jne  not_blink    
             
-                      mov  cx,6
+                      lea  bp,head_elem_blink
                       jmp  set_h
         
-not_blink:            sub  cl,47
-                      mov  ch,0
+not_blink:            sub  cl,top_cell
+                      mov  ch,0 
+                      shl  cx,1
+                      
+                      mov  si,cx
+                      lea  bp,head_elem_top[si]
     
 set_h:                call set_elem         
                       clc
@@ -1576,32 +1774,45 @@ set_h:                call set_elem
 move_head             endp    
 
 
-;===================
+;==========================================================
 ;
-; Procedure for realize delay
-; CX - needed delay. Delay time = CX*256/1000 s.
-
+; Procedure for slowing down the game.
+; 
+; Entry: CX - needed delay. Delay time = CX*256/1000 s
+;
+; Returns: No return
+; Calls: No calls
+; Changes: DX,AH
+; 
 stoping               proc    
         
                       mov  dx,0         
-                      mov  ah,86h  
-                
-                      int 15h             
+                      mov  ah,86h                  
+                      int  15h                             ; delay_seconds = (cx * 100h + dx) / 1000
                     
                       ret
 stoping               endp  
 
 
-;=====================
+;==========================================================
 ;
 ; Procedure to move field cell by it rotation.
-; BX - index of cell
+;
+; Entry: BX - index of cell
+; Returns: No return   
 
+; Calls: to_left, 
+;        to_bottom,  
+;        to_right, 
+;        to_top 
+;
+; Changes: AX,BX,CX,BP,blink_counter
+;  
 move                  proc 
      
                       mov  al,field[bx]
                       sub  al,49    
-                      mov  ah,0                            ; AX - index of direction
+                      mov  ah,0                            ; ax - index of direction.
                      
                       push to_left
                       push to_bottom
@@ -1620,52 +1831,84 @@ move                  proc
                       ret    
 move                  endp        
 
-;-----------
 
+;==========================================================
+;
+; Procedure to move to top.
+;
+; Entry: BX - index of cell
+; Returns: No return   
+; Calls: No calls
+; Changes: BL
+;
 to_top                proc
-    
-                      sub  bl,size                         ; esli index - size menshe 0
-                                                           ; to on avtomatom opustitca k         
-                      ret                                  ; nijnei granice
+                                                         
+                      sub  bl,size                         ; If index-size is less than zero, 
+                                                           ; the correct index will be obtained because of overflows         
+                      ret                                  ; (index will shift from the top border to the bottom border).
 to_top                endp    
 
-;-----------
 
+;==========================================================
+;
+; Procedure to move to bottom.
+;
+; Entry: BX - index of cell
+; Returns: No return   
+; Calls: No calls
+; Changes: BL
+;
 to_bottom             proc    
     
-                      add  bl,size                         ; esli index - size bolshe chem size^2
-                                                           ; to on avtomatom podnimetca k         
-                      ret                                  ; verhnei granice   
+                      add  bl,size                         ; If index-size is less than size^2-1 (255),
+                                                           ; the correct index will be obtained because of overflows    
+                      ret                                  ; (index will shift from the bottom border to the top border).  
 to_bottom             endp          
 
-;-----------
 
+;==========================================================
+;
+; Procedure to move to right.
+;
+; Entry: BX - index of cell
+; Returns: No return   
+; Calls: No calls
+; Changes: AL,BL
+;
 to_right              proc 
     
                       mov  al,bl
              
-                      and  al,00001111b
-                      inc  al                              ; esli periehod 
-                      and  al,00010000b                    ; otnimetca size
-                
+                      and  al,00001111b                    ; Get index in row.
+                      inc  al                             
+                      and  al,00010000b                    ; If the index is on the right border, then 
+                                                           ; al will contain size, otherwise zero.
                       sub  bl,al
                 
                       inc  bl 
                   
                       ret
 to_right              endp
+
     
-;-----------
-      
+;==========================================================
+;
+; Procedure to move to left.
+;
+; Entry: BX - index of cell
+; Returns: No return   
+; Calls: No calls
+; Changes: AL,BL
+;      
 to_left               proc
   
-                      dec  bl
+                      dec  bl                              ; First move to left.
    
-                      mov  al,bl
- 
+                      mov  al,bl                           ; Check, is the index on the right border. If it is, 
+                                                           ; then add size so as not to move to the line above.
                       and  al,00001111b
-                      inc  al                              ; esli periehod 
-                      and  al,00010000b                    ; dobavitca size
+                      inc  al                               
+                      and  al,00010000b                   
     
                       add  bl,al
                
@@ -1673,17 +1916,23 @@ to_left               proc
 to_left               endp  
 
 
-;=====================
+;==========================================================
 ;
-; Procedure for
-
+; Procedure for update record in file and in rec_buf, if 
+; need.
+;
+; Entry: No args
+; Returns: No return   
+; Calls: set_record, set_record_str
+; Changes: AX,CX,DX
+;
 update_record         proc
             
                       mov  dx,4
-                      sub  dx,delay                        ; get index of current regime  
+                      sub  dx,delay                        ; Get index of current regime.  
             
                       mov  bx,dx
-                      shl  bx,2                            ; get index of regime in file
+                      shl  bx,2                            ; Get index of regime in file.
             
                       mov  cx,score
             
@@ -1698,50 +1947,58 @@ update_record         proc
                       mov  bx,dx
                       lea  dx,records_file     
             
-                      mov  ah,3Dh                          ; otkrit suschestvuuschiõ file
-                      mov  al,1                            ; tolko dla chtenia  
+                      mov  ah,3Dh                          ; Open existed file in
+                      mov  al,1                            
            
                       int  21h    
-                      jc   end_update                      ; esli oshibka - vihod
+                      jc   end_update                      
                        
                       push bx
                        
                       mov  dx,bx   
-                      mov  bx,ax                           ; bx - file identifikator 
+                      mov  bx,ax                           ; bx - file identifier. 
                       mov  al,cl
             
                       call set_record
                        
-                      pop  dx
-                       
+                      pop  bx
+                                             
                       call set_record_str
                        
-                      mov  ah,3Eh                          ; close file
+                      mov  ah,3Eh                          ; Close file.
                       int  21h
                                                                      
 end_update:           ret
 update_record         endp  
 
 
-;=======================
+;==========================================================
 ;
-; Procedure for
-
+; Procedure for load game end page. If choice is win_chc, 
+; load win_page, otherwise load game_over_page.
+;
+; Entry: No args
+; Returns: No return
+;  
+; Calls: go_to_page,
+;        print_game_end_page,
+;        make_choice
+;
+; Changes: choice
+; 
 load_game_end_page    proc
                    
                       cmp  choice,win_chc
                       je   load_won
                        
-                      mov  dl,game_over_page
+                      go_to_page game_over_page
                       clc
                       jmp  page_num_set
                        
-load_won:             mov  dl,game_win_page                   
+load_won:             go_to_page game_win_page                   
                       stc
-                   
-page_num_set:         mov_to_page dl
-                   
-                      call print_game_end_page
+                      
+page_num_set:         call print_game_end_page
                    
                       mov  choice,1
                       call make_choice
@@ -1750,12 +2007,21 @@ page_num_set:         mov_to_page dl
 load_game_end_page    endp    
 
 
-;=====================
+;==========================================================
 ;
-; Procedure for print page in game end
-; CF - win flag. If set, win page will be printed.
-; Otherwice game over page.
-
+; Procedure for print page in game end.
+;
+; Entry: CF - win flag
+;
+; Returns: No return
+;  
+; Calls: go_to_page, 
+;        is_inited,
+;        print_game_end_page,
+;        print_choices
+;
+; Changes: AX,BL,CX,DX,BP,SI
+;
 print_game_end_page   proc
                                    
                       jc  print_won
@@ -1833,14 +2099,21 @@ end_page_inited:      lea  bp,score_str
                       ret
 print_game_end_page   endp
 
-;======================
-;
 
+;==========================================================
+;
+; Procedure for load screen on exit from game.
+;
+; Entry: No args
+; Returns: No return   
+; Calls: No calls
+; Changes: AX
+;
 load_exit_page        proc
    
-                      mov_to_page exit_page 
+                      go_to_page exit_page 
                      
-                      mov  ax,4C00h                        ; zakanchivaem programmu           
+                      mov  ax,4C00h                        ; End programm.           
                       int  21h  
       
 load_exit_page        endp  
