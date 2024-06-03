@@ -502,7 +502,7 @@ set_score_str         proc
               
                       push bx
               
-                      mov  ax, bx                          ; Set si to index of last digit of record value. 
+                      mov  ax, bx                          ; Set SI to index of last digit of record value. 
                                               
                       mov  ah,rec_str_len                  ; AX = BX * rec_str_len + rec_value_offset 
                       mul  ah                              ; SI = AX + 2
@@ -833,9 +833,9 @@ make_choice           proc
                       mov  dl,first_choice_col
                               
                       lea  bp,choice_ptr                     
-                      mov  al,0                            ; Attribute in bl
+                      mov  al,0                            ; Attribute in BL.
                       mov  bl,light_gray
-                      mov  cx,1                            ; Print one symbol
+                      mov  cx,1                            ; Print one symbol.
                       
                       mov  ah,13h                                     
                       int  10h                             ; Print choice ptr in neaded position.
@@ -845,10 +845,10 @@ make_choice           proc
                       int  10h                             ; Hide cursor.
 
 choice_waiting:       mov  ah,0                            ; Wait symbol in keyboard buffer.
-                      int  16h                             ; Result saved in ax.
+                      int  16h                             ; Result saved in AX.
                       
                       mov  cx,ax
-                      or   al,to_lower_mask                ; al = al.to_lower()
+                      or   al,to_lower_mask                ; AL = AL.to_lower()
                                                            ; This trick allows to avoid 
                       cmp  al,'w'                          ; comparison with UPPER CASE letters.
                       je   to_upper_choice
@@ -1419,7 +1419,7 @@ process_game_key      proc
                       jz   process_end                     ; If no key, return.
         
                       mov  ah,0                            
-                      int  16h                             ; If buffer contains key, save it to ax.
+                      int  16h                             ; If buffer contains key, save it to AX.
                       
                       cmp  ax,escape_key
                       je   process_escape
@@ -1693,19 +1693,19 @@ update_apple          proc
                       ret
     
 try_set_apple:        mov  ah,2Ch                          ; Get current time.
-                      int  21h                             ; dh - seconds, dl - centiseconds. 
+                      int  21h                             ; DH - seconds, DL - centiseconds. 
                     
                       mov  al,60                           ; Since the smaller the unit of measurement, the more  
                       mul  dl                              ; unpredictable value will be, seconds and centiseconds 
                       mov  dl,dh                           ; are best suited for obtaining a random number. 
                       mov  dh,0                 
-                      add  ax,dx                           ; ax = cs * 60 + s
+                      add  ax,dx                           ; AX = cs * 60 + s
                       mov  dx,0
                                                            ; Now AX value will be a random number from [0,5999].
                       mov  cx,23                           ; Divide this value by 23 and get an almost 
                       div  cx                              ; uniform distribution of the index.
                     
-                      mov  bh,0                            ; al - random value from [0,255].
+                      mov  bh,0                            ; AL - random value from [0,255].
                       mov  bl,al
         
                       cmp  field[bx],empty_cell            ; If new index is not empty index, try again.
@@ -1778,7 +1778,7 @@ move_head             endp
 ;
 ; Procedure for slowing down the game.
 ; 
-; Entry: CX - needed delay. Delay time = CX*256/1000 s
+; Entry: CX - needed delay. Delay time ~= CX/15 s
 ;
 ; Returns: No return
 ; Calls: No calls
@@ -1788,7 +1788,7 @@ stoping               proc
         
                       mov  dx,0         
                       mov  ah,86h                  
-                      int  15h                             ; delay_seconds = (cx * 100h + dx) / 1000
+                      int  15h                             ; delay_seconds = CX:DX / 1_000_000
                     
                       ret
 stoping               endp  
@@ -1812,7 +1812,7 @@ move                  proc
      
                       mov  al,field[bx]
                       sub  al,49    
-                      mov  ah,0                            ; ax - index of direction.
+                      mov  ah,0                            ; AX - index of direction.
                      
                       push to_left
                       push to_bottom
@@ -1882,7 +1882,7 @@ to_right              proc
                       and  al,00001111b                    ; Get index in row.
                       inc  al                             
                       and  al,00010000b                    ; If the index is on the right border, then 
-                                                           ; al will contain size, otherwise zero.
+                                                           ; AL will contain size, otherwise zero.
                       sub  bl,al
                 
                       inc  bl 
@@ -1956,7 +1956,7 @@ update_record         proc
                       push bx
                        
                       mov  dx,bx   
-                      mov  bx,ax                           ; bx - file identifier. 
+                      mov  bx,ax                           ; BX - file identifier. 
                       mov  al,cl
             
                       call set_record
@@ -2074,7 +2074,7 @@ game_end_mes:         push bx
                       int  10h 
                     
                       mov  si,sp                             
-                      mov  bx,[si]                         ; pick bx
+                      mov  bx,[si]                         ; pick BX
                     
                       lea  ax,play_again_str
                       lea  cx,back_to_menu_str
