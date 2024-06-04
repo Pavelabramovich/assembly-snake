@@ -49,3 +49,6 @@ will be created automatically if it does not exist yet.
   ![Alt Text](https://i.ibb.co/v1CJX5Z/image.png)
 - Game over <br></br>
   ![Alt Text](https://i.ibb.co/PQ0yzsn/image.png)
+
+## License
+This project is licensed under the [MIT](/license.md) license.
