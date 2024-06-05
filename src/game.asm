@@ -118,7 +118,7 @@ assume ds:data
 ; The next three bytes of regime describe the day, month and 
 ; year in the century (for 2021 it will be 21) in BCD format.
 
-    records_file      db   '../records.txt',0 
+    records_file      db   '../src/records.txt',0 
     
     record_len        =    4
     regime_count      =    3
