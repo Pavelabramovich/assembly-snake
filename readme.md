@@ -44,7 +44,7 @@ will be created automatically if it does not exist yet.
 - Regimes page <br></br>
   ![Alt Text](https://i.ibb.co/hsQbWCp/image.png)
 - Game <br></br>
-  ![Alt Text](https://i.postimg.cc/05H1yJNw/ezgif-com-crop.gif)
+  ![Alt Text](https://s12.gifyu.com/images/SrTGd.gif)
 - Pause <br></br>
   ![Alt Text](https://i.ibb.co/v1CJX5Z/image.png)
 - Game over <br></br>
